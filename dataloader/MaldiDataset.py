@@ -3,7 +3,8 @@ import pandas as pd
 import os
 import pandas as pd
 import numpy as np
-from dataloader.preprocess import SequentialPreprocessor, SpectrumObject, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer
+from dataloader.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer
+from dataloader.SpectrumObject import SpectrumObject
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
@@ -12,11 +13,46 @@ from tqdm import tqdm
 
    
 class MaldiDataset:
-    def __init__(self, root_dir, n_step=3):
-        self.root_dir = root_dir
-        self.n_step = n_step
-        self.data = []
+    """MaldiDataset class. Reads a dataset from a directory containing folders with MALDI-TOF spectra.
+    Assumes the following structure:
+    root_dir/
+        year_folder/
+            genus_folder/
+                species_folder/
+                    replicate_folder/
+                        lecture_folder/
+                            acqu
+                            fid
 
+    Parameters
+    ----------
+    root_dir : str
+        Path to the root directory of the dataset
+    preprocess_pipeline : SequentialPreprocessor, optional
+        Preprocessing pipeline to apply to the spectra, by default None
+    
+    Attributes
+    ----------
+    root_dir : str
+        Path to the root directory of the dataset
+    preprocess_pipeline : SequentialPreprocessor
+        Preprocessing pipeline to apply to the spectra
+    data : list
+        List of dictionaries containing the spectrum object and labels
+
+    Methods
+    -------
+    parse_dataset()
+        Parse the dataset and store the spectra in the data attribute
+    get_data()
+        Return the data attribute
+    
+    """
+    
+    def __init__(self, root_dir, preprocess_pipeline=None):
+        self.root_dir = root_dir
+        self.preprocess_pipeline = preprocess_pipeline
+        self.data = []
 
     def parse_dataset(self):
         print(f"Reading dataset from {self.root_dir}")
@@ -52,22 +88,15 @@ class MaldiDataset:
                                                     if acqu_file and fid_file:
                                                         # Read the maldi-tof spectra using from_bruker
                                                         spectrum = SpectrumObject.from_bruker(acqu_file, fid_file)
-                                                        # Binarize the spectrum using Binner
-                                                        binner = SequentialPreprocessor(
-                                                            VarStabilizer(method="sqrt"),
-                                                            Smoother(halfwindow=10),
-                                                            BaselineCorrecter(method="SNIP", snip_n_iter=20),
-                                                            Trimmer(),
-                                                            Binner(step=self.n_step),
-                                                            Normalizer(sum=1),
-                                                        )
-                                                        binned_spectrum = binner(spectrum)
+                                                        # Preprocessing pipeline if any
+                                                        if self.preprocess_pipeline:
+                                                            spectrum = self.preprocess_pipeline(spectrum)
                                                         # Skip if the spectrum is NaN due to preprocessing
-                                                        if np.isnan(binned_spectrum.intensity).any():
+                                                        if np.isnan(spectrum.intensity).any():
                                                             print("Skipping NaN spectrum")
                                                             continue
                                                         self.data.append({
-                                                            'spectrum_object': binned_spectrum,
+                                                            'spectrum_object': spectrum,
                                                             'year_label': year_label,
                                                             'genus_label': genus_label,
                                                             'genus_species_label': genus_species_label,
