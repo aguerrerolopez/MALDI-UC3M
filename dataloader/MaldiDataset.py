@@ -96,7 +96,8 @@ class MaldiDataset:
                                                             print("Skipping NaN spectrum")
                                                             continue
                                                         self.data.append({
-                                                            'spectrum_object': spectrum,
+                                                            'spectrum_intensity': spectrum.intensity,
+                                                            'spectrum_mz': spectrum.mz,
                                                             'year_label': year_label,
                                                             'genus_label': genus_label,
                                                             'genus_species_label': genus_species_label,
@@ -110,7 +111,7 @@ class MaldiDataset:
         genus_species = " ".join(parts[:2])
         hospital_code = " ".join(parts[2:])
         return genus_species, hospital_code
-
+    
     def _find_acqu_fid_files(self, directory):
         acqu_file = None
         fid_file = None
@@ -124,6 +125,29 @@ class MaldiDataset:
                     return acqu_file, fid_file
         return acqu_file, fid_file
 
+    def save_to_hdf5(self, file_name):
+        with h5py.File(file_name, 'w') as h5f:
+            spectra = np.array([d['spectrum_intensity'] for d in self.data])
+            mz_values = np.array([d['spectrum_mz'] for d in self.data])
+            year_labels = np.array([d['year_label'] for d in self.data])
+            genus_labels = np.array([d['genus_label'] for d in self.data])
+            genus_species_labels = np.array([d['genus_species_label'] for d in self.data])
+
+            h5f.create_dataset('spectra', data=spectra, chunks=True, compression='gzip')
+            h5f.create_dataset('mz_values', data=mz_values, chunks=True, compression='gzip')
+            h5f.create_dataset('year_labels', data=year_labels.astype('S'), chunks=True, compression='gzip')
+            h5f.create_dataset('genus_labels', data=genus_labels.astype('S'), chunks=True, compression='gzip')
+            h5f.create_dataset('genus_species_labels', data=genus_species_labels.astype('S'), chunks=True, compression='gzip')
+
+    def load_from_hdf5(self, file_name):
+        with h5py.File(file_name, 'r') as h5f:
+            self.data = [{
+                'spectrum_intensity': h5f['spectra'][i],
+                'spectrum_mz': h5f['mz_values'][i],
+                'year_label': h5f['year_labels'][i].decode('utf-8'),
+                'genus_label': h5f['genus_labels'][i].decode('utf-8'),
+                'genus_species_label': h5f['genus_species_labels'][i].decode('utf-8'),
+            } for i in range(len(h5f['spectra']))]
+
     def get_data(self):
         return self.data
-
