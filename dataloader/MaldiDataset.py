@@ -48,8 +48,8 @@ class MaldiDataset:
         Return the data attribute
     
     """
-    
-    def __init__(self, root_dir, preprocess_pipeline=None):
+
+    def __init__(self, root_dir, preprocess_pipeline:SequentialPreprocessor=None):
         self.root_dir = root_dir
         self.preprocess_pipeline = preprocess_pipeline
         self.data = []
