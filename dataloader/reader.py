@@ -17,45 +17,18 @@ class MaldiDataset:
         self.n_step = n_step
         self.data = []
 
+
     def parse_dataset(self):
-        # Initialize a ThreadPoolExecutor for parallel processing
-        max_workers = os.cpu_count() or 4  # Use number of CPUs or default to 4
-        futures = []
+        print(f"Reading dataset from {self.root_dir}")
+        # Get total number of folders for progress bar
+        total_folders = sum(
+            1 for year_folder in os.listdir(self.root_dir) if os.path.isdir(os.path.join(self.root_dir, year_folder))
+            for genus_folder in os.listdir(os.path.join(self.root_dir, year_folder)) if os.path.isdir(os.path.join(self.root_dir, year_folder, genus_folder))
+            for species_folder in os.listdir(os.path.join(self.root_dir, year_folder, genus_folder)) if os.path.isdir(os.path.join(self.root_dir, year_folder, genus_folder, species_folder))
+            for replicate_folder in os.listdir(os.path.join(self.root_dir, year_folder, genus_folder, species_folder)) if os.path.isdir(os.path.join(self.root_dir, year_folder, genus_folder, species_folder, replicate_folder))
+        )
 
-        def process_replicate_folder(replicate_folder_path, genus_label, genus_species_label, year_label):
-            data_points = []
-            for lecture_folder in os.listdir(replicate_folder_path):
-                lecture_folder_path = os.path.join(replicate_folder_path, lecture_folder)
-                if os.path.isdir(lecture_folder_path):
-                    # Search for "acqu" and "fid" files
-                    acqu_file, fid_file = self._find_acqu_fid_files(lecture_folder_path)
-                    if acqu_file and fid_file:
-                        # Read the maldi-tof spectra using from_bruker
-                        spectrum = SpectrumObject.from_bruker(acqu_file, fid_file)
-                        # Binarize the spectrum using Binner
-                        binner = SequentialPreprocessor(
-                            VarStabilizer(method="sqrt"),
-                            Smoother(halfwindow=10),
-                            BaselineCorrecter(method="SNIP", snip_n_iter=20),
-                            Trimmer(),
-                            Binner(step=self.n_step),
-                            Normalizer(sum=1),
-                        )
-                        binned_spectrum = binner(spectrum)
-                        # Skip if the spectrum is NaN due to preprocessing
-                        if np.isnan(binned_spectrum.intensity).any():
-                            print("Skipping NaN spectrum")
-                            continue
-                        data_points.append({
-                            'spectrum': binned_spectrum.intensity,
-                            'm/z': binned_spectrum.mz,
-                            'year_label': year_label,
-                            'genus_label': genus_label,
-                            'genus_species_label': genus_species_label,
-                        })
-            return data_points
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with tqdm(total=total_folders, desc="Processing Dataset", unit="folder") as pbar:
             for year_folder in os.listdir(self.root_dir):
                 year_folder_path = os.path.join(self.root_dir, year_folder)
                 if os.path.isdir(year_folder_path):
@@ -71,20 +44,37 @@ class MaldiDataset:
                                     for replicate_folder in os.listdir(species_folder_path):
                                         replicate_folder_path = os.path.join(species_folder_path, replicate_folder)
                                         if os.path.isdir(replicate_folder_path):
-                                            # Submit replicate folder processing to executor
-                                            futures.append(
-                                                executor.submit(
-                                                    process_replicate_folder,
-                                                    replicate_folder_path,
-                                                    genus_label,
-                                                    genus_species_label,
-                                                    year_label,
-                                                )
-                                            )
-            
-            # Use tqdm to display progress
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing Dataset"):
-                self.data.extend(future.result())
+                                            for lecture_folder in os.listdir(replicate_folder_path):
+                                                lecture_folder_path = os.path.join(replicate_folder_path, lecture_folder)
+                                                if os.path.isdir(lecture_folder_path):
+                                                    # Search for "acqu" and "fid" files
+                                                    acqu_file, fid_file = self._find_acqu_fid_files(lecture_folder_path)
+                                                    if acqu_file and fid_file:
+                                                        # Read the maldi-tof spectra using from_bruker
+                                                        spectrum = SpectrumObject.from_bruker(acqu_file, fid_file)
+                                                        # Binarize the spectrum using Binner
+                                                        binner = SequentialPreprocessor(
+                                                            VarStabilizer(method="sqrt"),
+                                                            Smoother(halfwindow=10),
+                                                            BaselineCorrecter(method="SNIP", snip_n_iter=20),
+                                                            Trimmer(),
+                                                            Binner(step=self.n_step),
+                                                            Normalizer(sum=1),
+                                                        )
+                                                        binned_spectrum = binner(spectrum)
+                                                        # Skip if the spectrum is NaN due to preprocessing
+                                                        if np.isnan(binned_spectrum.intensity).any():
+                                                            print("Skipping NaN spectrum")
+                                                            continue
+                                                        self.data.append({
+                                                            'spectrum': binned_spectrum.intensity,
+                                                            'm/z': binned_spectrum.mz,
+                                                            'year_label': year_label,
+                                                            'genus_label': genus_label,
+                                                            'genus_species_label': genus_species_label,
+                                                        })
+                                            pbar.update(1)
+
 
     def _parse_folder_name(self, folder_name):
         # Split folder name into genus, species, and hospital code
