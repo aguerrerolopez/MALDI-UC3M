@@ -67,8 +67,7 @@ class MaldiDataset:
                                                             print("Skipping NaN spectrum")
                                                             continue
                                                         self.data.append({
-                                                            'spectrum': binned_spectrum.intensity,
-                                                            'm/z': binned_spectrum.mz,
+                                                            'spectrum_object': binned_spectrum,
                                                             'year_label': year_label,
                                                             'genus_label': genus_label,
                                                             'genus_species_label': genus_species_label,
