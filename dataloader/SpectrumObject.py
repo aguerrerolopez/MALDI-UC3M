@@ -1,13 +1,7 @@
 import numpy as np
 import pandas as pd
-from scipy.stats import binned_statistic
-import os
-from scipy.signal import savgol_filter
-from scipy import sparse
-from scipy.linalg import norm
 import pandas as pd
 import numpy as np
-from scipy.stats import binned_statistic
 import matplotlib.pyplot as plt
 
 
@@ -135,22 +129,25 @@ class SpectrumObject:
 
     @classmethod
     def from_tsv(cls, file, sep=" "):
-        """Read a spectrum from txt
-
-        Parameters
-        ----------
-        file : str
-            path to csv file
-        sep : str, optional
-            separator in the file, by default " "
-
-        Returns
-        -------
-        SpectrumObject
         """
-        s = pd.read_table(
-            file, sep=sep, index_col=None, comment="#", header=None
-        ).values
-        mz = s[:, 0]
-        intensity = s[:, 1]
+        Reads a spectrum from a text file and removes any **non-numeric** headers.
+
+        Parameters:
+        - file (str): Path to the spectrum file.
+        - sep (str, optional): Separator used in the file (default is " ").
+
+        Returns:
+        - SpectrumObject instance.
+        """
+        # Read the TSV file
+        s = pd.read_table(file, sep=sep, index_col=None, comment="#", header=None).values
+
+        # Check the first row and remove if it's not numeric
+        if not str(s[0, 0]).replace(".", "", 1).isdigit():
+            s = s[1:]  # Remove the first row
+
+        # Convert to float to ensure no string issues
+        mz = s[:, 0].astype(float)
+        intensity = s[:, 1].astype(float)
+
         return cls(mz=mz, intensity=intensity)

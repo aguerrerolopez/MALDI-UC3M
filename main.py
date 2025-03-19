@@ -1,5 +1,5 @@
 from dataloader.MaldiDataset import MaldiDataset
-from dataloader.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer
+from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer
 from dataloader.DataAugmenter import DataAugmenter
 
 

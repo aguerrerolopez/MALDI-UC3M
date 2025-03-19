@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import pandas as pd
 import numpy as np
-from dataloader.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer
+from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer
 from dataloader.SpectrumObject import SpectrumObject
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
@@ -103,7 +103,6 @@ class MaldiDataset:
                                                             'genus_species_label': genus_species_label,
                                                         })
                                             pbar.update(1)
-
 
     def _parse_folder_name(self, folder_name):
         # Split folder name into genus, species, and hospital code
