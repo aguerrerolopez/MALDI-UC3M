@@ -293,20 +293,23 @@ class DRIAMS_Dataset:
     Efficiently loads spectra from the DRIAMS dataset for ML training.
     """
 
-    def __init__(self, manager, genus, species, hospital=None, year=None):
+    def __init__(self, manager, genus=None, species=None, hospital=None, year=None, spectra_list=None):
         """
-        Initializes dataset by retrieving spectra paths.
+        Initializes dataset by retrieving spectra paths or merging existing ones.
 
         Parameters:
         - manager (DRIAMS_Manager): Instance of DRIAMS_Manager.
-        - genus (str): Bacterial genus.
-        - species (str): Bacterial species.
+        - genus (str, optional): Bacterial genus.
+        - species (str, optional): Bacterial species.
         - hospital (str, optional): Filter by hospital.
         - year (str, optional): Filter by year.
+        - spectra_list (list, optional): List of tuples [(file_path, metadata)] for merged datasets.
         """
         self.manager = manager
-        self.file_list = self.manager.query_spectra(genus, species, hospital, year)
-        self.labels = self.generate_labels()
+        if spectra_list is None:
+            self.file_list = self.manager.query_spectra(genus, species, hospital, year)
+        else:
+            self.file_list = spectra_list  # If merging datasets, use provided list
 
     def __len__(self):
         """Returns the number of spectra in the dataset."""
@@ -317,7 +320,7 @@ class DRIAMS_Dataset:
         Lazily loads a single spectrum.
 
         Returns:
-        - Tuple (m/z values, intensity values, label)
+        - Tuple (SpectrumObject, label)
         """
         file_path, metadata = self.file_list[index]
         spectrum = self.manager.load_spectrum(file_path)
@@ -327,6 +330,19 @@ class DRIAMS_Dataset:
 
         return SpectrumObject(mz=spectrum.mz, intensity=spectrum.intensity), label
     
+    def __add__(self, other):
+        """
+        Allows merging two DRIAMS_Dataset objects into one.
+
+        Example:
+        merged_dataset = ecoli_dataset + kleb_dataset
+        """
+        if not isinstance(other, DRIAMS_Dataset):
+            raise TypeError("Only DRIAMS_Dataset objects can be merged.")
+
+        new_spectra_list = self.file_list + other.file_list
+        return DRIAMS_Dataset(self.manager, spectra_list=new_spectra_list)
+
     def generate_labels(self):
         """
         Generates labels in the format `Genus-Species-Hospital-Year` for each sample.
@@ -334,23 +350,5 @@ class DRIAMS_Dataset:
         Returns:
         - List of labels.
         """
-        labels = []
-        for _, metadata in self.file_list:
-            labels.append(f"{metadata['genus']}-{metadata['species']}-{metadata['hospital']}-{metadata['year']}")
-        return labels
-
-    def get_feature_matrix(self):
-        """
-        Loads all spectra and returns a feature matrix.
-
-        Returns:
-        - X (numpy array): Feature matrix (intensity values).
-        - y (numpy array): Labels.
-        """
-        # Extract only file paths from query results (ignore metadata)
-        file_paths = [entry[0] if isinstance(entry, tuple) else entry for entry in self.file_list]
-
-        # Load spectra
-        X = [self.manager.load_spectrum(f).intensity for f in file_paths]
-        
-        return np.array(X), np.array(self.labels)
+        return [f"{metadata['genus']}-{metadata['species']}-{metadata['hospital']}-{metadata['year']}"
+                for _, metadata in self.file_list]

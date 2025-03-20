@@ -29,7 +29,8 @@ def spectra_comparison(spectra_list, title="Spectra Comparison"):
     colors = [plt.cm.viridis(i / len(spectra_list)) for i in range(len(spectra_list))]
 
     # Plot each spectrum
-    for i, (mz, intensity, label) in enumerate(spectra_list):
+    for i, (spectrum, label) in enumerate(spectra_list):
+        mz, intensity = spectrum.mz, spectrum.intensity
         plt.plot(mz, intensity, label=label, color=colors[i], linewidth=1.5)
 
     # Formatting
@@ -59,7 +60,7 @@ def plot_pca(dataset, target="bacteria", target_length=1000, n_components=2, tit
     Performs PCA on multiple datasets and plots the first two principal components.
 
     Parameters:
-    - datasets (list): List of DRIAMS_Dataset instances.
+    - dataset (DRIAMS_Dataset): Dataset to visualize.
     - target (str, optional): What to group spectra by (options: "bacteria", "hospital", "year").
     - target_length (int, optional): Fixed length for interpolation before PCA.
     - n_components (int, optional): Number of PCA components to use.
@@ -73,7 +74,8 @@ def plot_pca(dataset, target="bacteria", target_length=1000, n_components=2, tit
     X, y = [], []
 
     for i in range(len(dataset)):
-        mz, intensity, metadata = dataset[i]  # Retrieve spectrum data
+        spectrum, metadata = dataset[i]  # Retrieve spectrum data
+        mz, intensity = spectrum.mz, spectrum.intensity
         interpolated_intensity = interpolate_spectrum((mz, intensity), target_length)
 
         # Skip NaN-containing spectra
@@ -127,7 +129,7 @@ def plot_tsne(dataset, target="bacteria", target_length=1000, perplexity=30, lea
     Plots a t-SNE visualization for one or multiple datasets in a single plot.
 
     Parameters:
-    - datasets (list or DRIAMS_Dataset): Dataset(s) to visualize.
+    - datasets (DRIAMS_Dataset): Dataset to visualize.
     - target (str, optional): What to group spectra by (options: "bacteria", "hospital", "year").
     - target_length (int, optional): Fixed length for interpolation before t-SNE.
     - perplexity (int, optional): Perplexity parameter for t-SNE.
@@ -138,9 +140,6 @@ def plot_tsne(dataset, target="bacteria", target_length=1000, perplexity=30, lea
     - None (displays a scatter plot)
     """
 
-    if not isinstance(dataset, list):  # If a single dataset is given, wrap it in a list
-        dataset = [dataset]
-
     # Auto-generate title if none provided
     if title is None:
         title = f"t-SNE Projection of Spectra by {target.capitalize()}"
@@ -149,7 +148,8 @@ def plot_tsne(dataset, target="bacteria", target_length=1000, perplexity=30, lea
 
 
     for i in range(len(dataset)):
-        mz, intensity, metadata = dataset[i]  # Retrieve spectrum data
+        spectrum, metadata = dataset[i]  # Retrieve spectrum data
+        mz, intensity = spectrum.mz, spectrum.intensity
         interpolated_intensity = interpolate_spectrum((mz, intensity), target_length)
 
         # Skip NaN-containing spectra
@@ -175,7 +175,7 @@ def plot_tsne(dataset, target="bacteria", target_length=1000, perplexity=30, lea
         raise ValueError("No valid spectra available for t-SNE after removing NaN values.")
 
     # Perform t-SNE
-    tsne = TSNE(n_components=2, perplexity=perplexity, learning_rate=learning_rate, random_state=42)
+    tsne = TSNE(n_components=2, perplexity=perplexity, learning_rate=learning_rate, random_state=42, n_jobs=-1)
     X_tsne = tsne.fit_transform(X)
 
     # Create color map
@@ -196,4 +196,36 @@ def plot_tsne(dataset, target="bacteria", target_length=1000, perplexity=30, lea
     plt.grid(True, linestyle="--", alpha=0.6)
 
     # Show plot
+    plt.show()
+
+def visualize_preprocessing_steps(spectrum, pipeline):
+    """
+    Visualizes a random spectrum at each step of the preprocessing pipeline.
+
+    Parameters:
+    - spectrum (SpectrumObject): The original spectrum.
+    - pipeline (SequentialPreprocessor): The preprocessing pipeline.
+    
+    Returns:
+    - None (Displays plots)
+    """
+    plt.figure(figsize=(10, 6))
+
+    # Start with original spectrum
+    spectrum, metadata = spectrum
+    mz, intensity = spectrum.mz, spectrum.intensity
+    plt.plot(mz, intensity, label=metadata, linestyle="dashed", alpha=0.8)
+
+    # Apply preprocessing step by step
+    for step in pipeline.preprocessors:
+        spectrum = step(spectrum)  # Apply step
+        mz, intensity = spectrum.mz, spectrum.intensity  # Extract new values
+        plt.plot(mz, intensity, label=f"After {step.__class__.__name__}")
+
+    # Formatting
+    plt.xlabel("m/z")
+    plt.ylabel("Intensity")
+    plt.title("Preprocessing Step-by-Step on a Random Sample")
+    plt.legend()
+    plt.grid(alpha=0.3)
     plt.show()

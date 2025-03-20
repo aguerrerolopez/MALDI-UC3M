@@ -1,15 +1,42 @@
 import numpy as np
-import pandas as pd
-from scipy.stats import binned_statistic
-import os
-from scipy.signal import savgol_filter
+import random
+
 from scipy import sparse
 from scipy.linalg import norm
-import pandas as pd
-import numpy as np
 from scipy.stats import binned_statistic
-import matplotlib.pyplot as plt
+from scipy.signal import savgol_filter
+
 from dataloader.SpectrumObject import SpectrumObject
+from utils.visualization import visualize_preprocessing_steps
+
+def preprocess_spectra(dataset, pipeline, visualize=False):
+    """
+    Applies a preprocessing pipeline to a list of SpectrumObject instances.
+    
+    Parameters:
+    - dataset (list): List of SpectrumObject instances.
+    - pipeline (SequentialPreprocessor): Preprocessing pipeline.
+    - visualize (bool, optional): If True, visualize a random sample at each preprocessing step.
+
+    Returns:
+    - List of preprocessed SpectrumObject instances.
+    """
+    processed_spectra = []
+    
+    # Select a random sample for visualization (before processing)
+    sample_idx = random.randint(0, len(dataset) - 1) if visualize else None
+
+    for spectrum in dataset:
+        processed_spectrum = spectrum  # Start with the original spectrum
+
+        if visualize and dataset.index(spectrum) == sample_idx:
+            visualize_preprocessing_steps(spectrum, pipeline)
+
+        # Apply full preprocessing
+        processed_spectrum = pipeline(processed_spectrum)
+        processed_spectra.append(processed_spectrum)
+
+    return processed_spectrum
 
 
 class Binner:
