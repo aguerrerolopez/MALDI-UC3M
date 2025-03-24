@@ -3,6 +3,7 @@ import torch
 import matplotlib.pyplot as plt
 
 
+
 def evaluation(test_loader, name=None, model_best=None, epoch=None):
     """
     Evaluate the model on the test set
@@ -23,6 +24,7 @@ def evaluation(test_loader, name=None, model_best=None, epoch=None):
     KL = 0.
     N = 0.
     for indx_batch, test_batch in enumerate(test_loader):
+        test_batch, _ = test_batch if len(test_batch) == 2 else test_batch # for datasets with labels it is necessary to just take the first element (the data)
         loss_t, RE_t, KL_t = model_best.forward(test_batch, reduction='sum')
         loss = loss + loss_t.item()
         RE = RE + RE_t.item()
@@ -72,7 +74,10 @@ def samples_generated(name, data_loader, extra_name=''):
     :param extra_name: extra name for the file
     :return: None
     """
-    x = next(iter(data_loader)).detach().numpy()
+
+    x = next(iter(data_loader))
+    x, _ = x if len(x) == 2 else x
+    x = x.detach().numpy() if len(x) == 2 else x.detach().numpy()
 
     # GENERATIONS-------
     model_best = torch.load(name + '.model', weights_only=False)
@@ -85,7 +90,7 @@ def samples_generated(name, data_loader, extra_name=''):
 
     fig, ax = plt.subplots(num_x, num_y)
     for i, ax in enumerate(ax.flatten()):
-        plottable_image = np.reshape(x[i], (8, 8))
+        plottable_image = np.reshape(x[i], (int(np.sqrt(len(x[i]))), int(np.sqrt(len(x[i])))))
         ax.imshow(plottable_image, cmap='gray')
         ax.axis('off')
 
@@ -140,6 +145,7 @@ def training(name, max_patience, num_epochs, model, optimizer, training_loader, 
             if hasattr(model, 'dequantization'):
                 if model.dequantization:
                     batch = batch + torch.rand(batch.shape)
+            batch, _ = batch if len(batch) == 2 else batch # for datasets with labels it is necessary to just take the first element (the data)
             loss, _, _ = model.forward(batch)
 
             optimizer.zero_grad()

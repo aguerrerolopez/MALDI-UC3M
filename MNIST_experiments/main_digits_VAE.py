@@ -25,9 +25,9 @@ training_loader = DataLoader(train_data, batch_size=64, shuffle=True)
 val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
 test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
 
-result_dir = f'results/{data_name}_vae_{time.strftime("%Y%m%d_%H%M%S")}/'
+name = 'vae'
+result_dir = f'results/{data_name}_{name}_{time.strftime("%Y%m%d_%H%M%S")}/'
 os.makedirs(result_dir, exist_ok=True)
-name = 'VAE'
 
 ### HYPERPARAMS
 

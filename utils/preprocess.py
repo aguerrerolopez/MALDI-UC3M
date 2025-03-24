@@ -12,32 +12,29 @@ from utils.visualization import visualize_preprocessing_steps
 def preprocess_spectra(dataset, pipeline, visualize=False):
     """
     Applies a preprocessing pipeline to a list of SpectrumObject instances.
-    
+
     Parameters:
-    - dataset (list): List of SpectrumObject instances.
+    - dataset (list of tuples): List of (SpectrumObject, label).
     - pipeline (SequentialPreprocessor): Preprocessing pipeline.
     - visualize (bool, optional): If True, visualize a random sample at each preprocessing step.
 
     Returns:
-    - List of preprocessed SpectrumObject instances.
+    - List of (SpectrumObject, label) after preprocessing.
     """
     processed_spectra = []
-    
-    # Select a random sample for visualization (before processing)
+
+    # Select a random sample for visualization
     sample_idx = random.randint(0, len(dataset) - 1) if visualize else None
 
-    for spectrum in dataset:
-        processed_spectrum = spectrum  # Start with the original spectrum
+    for i, (spectrum, label) in enumerate(dataset): 
+        original = spectrum  # Save original spectrum
+        if visualize and i == sample_idx:
+            visualize_preprocessing_steps(original, pipeline)
 
-        if visualize and dataset.index(spectrum) == sample_idx:
-            visualize_preprocessing_steps(spectrum, pipeline)
+        processed = pipeline(original)
+        processed_spectra.append((processed, label)) 
 
-        # Apply full preprocessing
-        processed_spectrum = pipeline(processed_spectrum)
-        processed_spectra.append(processed_spectrum)
-
-    return processed_spectrum
-
+    return processed_spectra
 
 class Binner:
 

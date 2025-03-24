@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from pytorch_model_summary import summary
 
 from utils.probability_distributions import log_normal_diag, log_standard_normal, log_bernoulli, log_categorical
 
@@ -93,7 +94,7 @@ class Decoder(nn.Module):
     decoding, sampling, and calculating the log probability.
     Attributes:
         decoder (nn.Module): The neural network used as the decoder.
-        distribution (str): The distribution used for the decoder (categorical or Bernoulli).
+        distribution (str): The distribution used for the decoder (categorical, Bernoulli, or gaussian).
         num_vals (int): The number of values for the categorical distribution.
     Methods:
         decode(z):
@@ -106,68 +107,54 @@ class Decoder(nn.Module):
             Defines the forward pass of the decoder, which can either return the log probability or a sample.
     """
 
-    def __init__(self, decoder_net, distribution='categorical', num_vals=None):
+    def __init__(self, decoder_net, distribution='categorical'):
         super(Decoder, self).__init__()
 
         # The decoder network
         self.decoder = decoder_net
         # The distribution used for the decoder (categotical by default)
         self.distribution = distribution
-        # The number of values for the categorical distribution
-        self.num_vals=num_vals
 
     def decode(self, z):
         """This function calculates parameters of the likelihood function p(x|z)"""
         # First, we apply the decoder network
         h_d = self.decoder(z)
 
-        # In the case of categorical distribution
-        if self.distribution == 'categorical':
-            # We save the shapes: the bacth size...
-            b = h_d.shape[0]
-            # ... and the dimensionality of x
-            d = h_d.shape[1]//self.num_vals
-            # Then we reshape to (batch size, dimensionality, number of values)
-            h_d = h_d.view(b, d, self.num_vals)
-            # We apply the softmax function to get the probabilities
-            mu_d = torch.softmax(h_d, 2)
-            return [mu_d]
-
         # In the case of Bernoulli distribution
-        elif self.distribution == 'bernoulli':
+        if self.distribution == 'bernoulli':
             # In the Bernoulli case , we have x_d \in {0 ,1}. 
             # Therefore, it is enough to output a single probability,
             # because p(x_d =1|z) = \theta and p(x_d =0|z) = 1− \theta
             mu_d = torch.sigmoid(h_d)
             return [mu_d]
         
+        # In the case of Gaussian distribution
+        elif self.distribution == 'gaussian':
+            # We split the output into two parts: mu and log-variance
+            mu_d, log_var_d = torch.chunk(h_d, 2, dim=1)
+            return [mu_d, log_var_d]
+        
         else:
-            raise ValueError('Either `categorical` or `bernoulli`')
+            raise ValueError('Either `bernoulli` or `gaussian`')
 
     def sample(self, z):
         """This function samples from the decoder (likelihood function p(x|z))."""
         outs = self.decode(z)
 
-        if self.distribution == 'categorical':
-            # We take the output of the decoder...
-            mu_d = outs[0]
-            # ... and save shapes (we will need them for reshaping)
-            b = mu_d.shape[0]
-            m = mu_d.shape[1]
-            # Reshaping: (batch size, dimensionality, number of values)
-            mu_d = mu_d.view(mu_d.shape[0], -1, self.num_vals)
-            p = mu_d.view(-1, self.num_vals)
-            # Eventually , we sample from the categorical (the built−in PyTorch function)
-            x_new = torch.multinomial(p, num_samples=1).view(b, m)
-
-        elif self.distribution == 'bernoulli':
+        if self.distribution == 'bernoulli':
             # In the case of Benoulli, we don't need reshaping
             mu_d = outs[0]
             # and we can use the built-in PyTorch function for Bernoulli sampling
             x_new = torch.bernoulli(mu_d)
+
+        elif self.distribution == 'gaussian':
+            mu_d = outs[0]
+            log_var_d = outs[1]
+            # We sample from the Gaussian distribution
+            x_new = torch.randn_like(mu_d) * torch.exp(0.5*log_var_d) + mu_d
         
         else:
-            raise ValueError('Either `categorical` or `bernoulli`')
+            raise ValueError('Either `bernoulli` or `gaussian`')
 
         return x_new
     
@@ -175,16 +162,17 @@ class Decoder(nn.Module):
         """This function calculates the conditional log−likelihood function p(x|z)"""
         outs = self.decode(z)
 
-        if self.distribution == 'categorical':
-            mu_d = outs[0]
-            log_p = log_categorical(x, mu_d, num_classes=self.num_vals, reduction='sum', dim=-1).sum(-1)
-            
-        elif self.distribution == 'bernoulli':
+        if self.distribution == 'bernoulli':
             mu_d = outs[0]
             log_p = log_bernoulli(x, mu_d, reduction='sum', dim=-1)
+
+        elif self.distribution == 'gaussian':
+            mu_d = outs[0]
+            log_var_d = torch.log(0.1)  # We use a fixed variance in log scale
+            log_p = log_normal_diag(x, mu_d, log_var_d)
             
         else:
-            raise ValueError('Either `categorical` or `bernoulli`')
+            raise ValueError('Either `bernoulli` or `gaussian`')
 
         return log_p
 
@@ -233,11 +221,9 @@ class VAE(nn.Module):
     Variational Autoencoder (VAE) model.
     
     Args:
-        encoder_net (nn.Module): Encoder network.
-        decoder_net (nn.Module): Decoder network.
-        num_vals (int): Number of values for the categorical distribution.
-        L (int): Dimensionality of the latent space.
-        likelihood_type (str): Likelihood function used for the decoder (categorical or Bernoulli).
+        likelihood_type (str): Likelihood function used for the decoder (gaussian or Bernoulli).
+        D (int): Input dimension.
+        L (int): Latent dimension.
     Methods:
         forward(x, reduction='avg'): Forward pass of the VAE.
                 x (torch.Tensor): Input data.
@@ -248,14 +234,25 @@ class VAE(nn.Module):
             Returns: torch.Tensor: Samples from the VAE.
     """
 
-    def __init__(self, encoder_net, decoder_net, num_vals=256, L=16, likelihood_type='categorical'):
+    def __init__(self, likelihood_type='bernoulli', D=256, L=32):
         super(VAE, self).__init__()
 
-        self.encoder = Encoder(encoder_net=encoder_net)
-        self.decoder = Decoder(distribution=likelihood_type, decoder_net=decoder_net, num_vals=num_vals)
-        self.prior = Prior(L=L)
+        encoder_net = nn.Sequential(nn.Linear(D, 128), nn.ReLU(),
+                                    nn.Linear(128, 64), nn.ReLU(),
+                                    nn.Linear(64, 2 * L))  # outputs mu and log_var
+        
+        decoder_net = nn.Sequential(nn.Linear(L, 64), nn.ReLU(),
+                                    nn.Linear(64, 128), nn.ReLU(),
+                                    nn.Linear(128, D))
+        
+        # Print model summary
+        print("ENCODER:\n", summary(encoder_net, torch.zeros(1, D), show_input=False, show_hierarchical=False))
+        print("\nDECODER:\n", summary(decoder_net, torch.zeros(1, L), show_input=False, show_hierarchical=False))
 
-        self.num_vals = num_vals
+
+        self.encoder = Encoder(encoder_net=encoder_net)
+        self.decoder = Decoder(distribution=likelihood_type, decoder_net=decoder_net)
+        self.prior = Prior(L=L)
 
         self.likelihood_type = likelihood_type
 
