@@ -3,7 +3,7 @@ import torch.nn as nn
 from pytorch_model_summary import summary
 
 from utils.probability_distributions import log_normal_diag, log_standard_normal, log_bernoulli, log_categorical
-
+from utils.losses import RE_log_prob, KL_divergence, calculate_ELBO
 
 class Encoder(nn.Module):
     """Encoder network for the Variational Autoencoder (VAE).
@@ -130,8 +130,9 @@ class Decoder(nn.Module):
         
         # In the case of Gaussian distribution
         elif self.distribution == 'gaussian':
-            # We split the output into two parts: mu and log-variance
-            mu_d, log_var_d = torch.chunk(h_d, 2, dim=1)
+            # The decoder outputs just the mean, std is fixed
+            mu_d = h_d
+            log_var_d = torch.log(torch.tensor(0.1))  # Fixed log variance (log(0.1) or log(0.2), etc.)
             return [mu_d, log_var_d]
         
         else:
@@ -151,8 +152,10 @@ class Decoder(nn.Module):
             mu_d = outs[0]
             log_var_d = outs[1]
             # We sample from the Gaussian distribution
-            x_new = torch.randn_like(mu_d) * torch.exp(0.5*log_var_d) + mu_d
-        
+            std_d = torch.exp(0.5 * log_var_d)  # Compute standard deviation from log variance
+            eps = torch.randn_like(mu_d)  # Sample from standard normal distribution
+            x_new = mu_d + eps * std_d  # Reparameterization trick
+            
         else:
             raise ValueError('Either `bernoulli` or `gaussian`')
 
@@ -168,11 +171,11 @@ class Decoder(nn.Module):
 
         elif self.distribution == 'gaussian':
             mu_d = outs[0]
-            log_var_d = torch.log(0.1)  # We use a fixed variance in log scale
-            log_p = log_normal_diag(x, mu_d, log_var_d)
+            log_var_d = outs[1]  # log_var_d is the second output from the decoder
+            log_p = log_normal_diag(x, mu_d, log_var_d, reduction='sum')
             
         else:
-            raise ValueError('Either `bernoulli` or `gaussian`')
+            raise ValueError('Only `bernoulli` and `gaussian` distributions are supported')
 
         return log_p
 
@@ -246,8 +249,8 @@ class VAE(nn.Module):
                                     nn.Linear(128, D))
         
         # Print model summary
-        print("ENCODER:\n", summary(encoder_net, torch.zeros(1, D), show_input=False, show_hierarchical=False))
-        print("\nDECODER:\n", summary(decoder_net, torch.zeros(1, L), show_input=False, show_hierarchical=False))
+        print("VAE ENCODER:\n", summary(encoder_net, torch.zeros(1, D), show_input=False, show_hierarchical=False))
+        print("\n VAE DECODER:\n", summary(decoder_net, torch.zeros(1, L), show_input=False, show_hierarchical=False))
 
 
         self.encoder = Encoder(encoder_net=encoder_net)
@@ -257,24 +260,22 @@ class VAE(nn.Module):
         self.likelihood_type = likelihood_type
 
     def forward(self, x, reduction='avg'):
-        # encoder
+        # 1) Encode
         mu_e, log_var_e = self.encoder.encode(x)
+        # 2) Sample z
         z = self.encoder.sample(mu_e=mu_e, log_var_e=log_var_e)
+        # 3) compute KL
+        KL = KL_divergence(self.prior, self.encoder, mu_e, log_var_e, z)
 
-        # ELBO
-        RE = self.decoder.log_prob(x, z) # Reconstruction error
-        KL = (self.prior.log_prob(z) - self.encoder.log_prob(mu_e=mu_e, log_var_e=log_var_e, z=z)).sum(-1) # KL divergence
+        # Older approaches:
+        # RE = self.decoder.log_prob(x, z) # Reconstruction error
+        # KL = (self.prior.log_prob(z) - self.encoder.log_prob(mu_e=mu_e, log_var_e=log_var_e, z=z)).sum(-1) # KL divergence
 
-        if reduction == 'sum':
-            ELBO = -(RE + KL).sum()
-            RE = abs(RE.sum())
-            KL = abs(KL.sum())
-        else:
-            ELBO = -(RE + KL).mean()
-            RE = abs(RE.mean())
-            KL = abs(KL.mean())
-        
-        return ELBO, RE, KL
+        # RE = RE_log_prob(x, z, self.decoder)
+        # KL = KL_divergence(self.prior, self.encoder, mu_e, log_var_e, z)
+        # ELBO, RE, KL = calculate_ELBO(x, z, self.encoder, self.prior, self.decoder, reduction=reduction)
+
+        return z, KL, mu_e, log_var_e
 
     def sample(self, batch_size=64):
         z = self.prior.sample(batch_size=batch_size)
