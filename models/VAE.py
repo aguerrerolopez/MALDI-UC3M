@@ -264,8 +264,11 @@ class VAE(nn.Module):
         mu_e, log_var_e = self.encoder.encode(x)
         # 2) Sample z
         z = self.encoder.sample(mu_e=mu_e, log_var_e=log_var_e)
+
         # 3) compute KL
-        KL = KL_divergence(self.prior, self.encoder, mu_e, log_var_e, z)
+        # log_p_z = self.prior.log_prob(z)                                         # log p(z)
+        # log_q_z = self.encoder.log_prob(mu_e=mu_e, log_var_e=log_var_e, z=z)     # log q(z|x)
+        # KL = KL_divergence(log_p_z, log_q_z)  # KL(q(z|x) || p(z))
 
         # Older approaches:
         # RE = self.decoder.log_prob(x, z) # Reconstruction error
@@ -275,7 +278,7 @@ class VAE(nn.Module):
         # KL = KL_divergence(self.prior, self.encoder, mu_e, log_var_e, z)
         # ELBO, RE, KL = calculate_ELBO(x, z, self.encoder, self.prior, self.decoder, reduction=reduction)
 
-        return z, KL, mu_e, log_var_e
+        return z, mu_e, log_var_e
 
     def sample(self, batch_size=64):
         z = self.prior.sample(batch_size=batch_size)
