@@ -1,0 +1,123 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+# Define the VAE model.
+class VAE(nn.Module):
+    def __init__(self, loss_mode='bce'):
+        """
+        loss_mode can be 'bce', 'mse', or 'gaussian'
+        """
+        super(VAE, self).__init__()
+        self.loss_mode = loss_mode
+        
+        # Bottleneck encoder: from 784 to 256.
+        self.encoder_bot = nn.Sequential(
+            nn.Linear(784, 512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.ReLU())
+        # Latent space parameters: from 256 to 32 (for both mean and logvar).
+        self.vae_enc = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 32*2))
+        
+        
+        # Decoder: from latent 32 to intermediate 256, then bottleneck decoder from 256 to 784.
+        self.decoder_fc1 = nn.Linear(32, 256)
+        self.decoder_bot = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(256, 512),
+            nn.ReLU(),
+            nn.Linear(512, 784))
+
+    def encode(self, x):
+        bot = self.encoder_bot(x)
+        # Get latent space parameters.
+        mu, logvar = self.vae_enc(bot).chunk(2, dim=-1)
+        return mu, logvar
+
+    def reparameterize(self, mu, logvar):
+        # Standard reparameterization trick.
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z):
+        vae_dec = self.decoder_fc1(z)
+        h3 = self.decoder_bot(vae_dec)
+        # For BCE loss, it is customary to use a sigmoid output.
+        if self.loss_mode == 'bce':
+            return torch.sigmoid(h3)
+        else:
+            return h3
+
+    def forward(self, x):
+        # Encode input, reparameterize, then decode.
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        recon = self.decode(z)
+        return recon, mu, logvar
+
+def loss_function(recon_x, x, mu, logvar, loss_mode):
+    # Calculate KL divergence loss.
+    kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    
+    # Choose the reconstruction loss based on the keyword.
+    if loss_mode == 'bce':
+        rec_loss = F.binary_cross_entropy(recon_x, x, reduction='sum')
+    elif loss_mode == 'mse':
+        rec_loss = F.mse_loss(recon_x, x, reduction='sum')
+    elif loss_mode == 'gaussian':
+        # Assuming unit variance, the negative log-likelihood is proportional to MSE.
+        rec_loss = 0.5 * F.mse_loss(recon_x, x, reduction='sum')
+    else:
+        raise ValueError("Unsupported loss mode. Use 'bce', 'mse' or 'gaussian'.")
+    
+    return rec_loss + kl, rec_loss, kl
+
+def train(model, device, train_loader, optimizer, epoch):
+    model.train()
+    train_loss = 0.0
+    for batch_idx, (data, _) in enumerate(train_loader):
+        # Flatten the 28x28 image to a 784 vector.
+        data = data.view(-1, 784).to(device)
+        optimizer.zero_grad()
+        recon_batch, mu, logvar = model(data)
+        loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
+        loss.backward()
+        train_loss += loss.item()
+        optimizer.step()
+        
+        if batch_idx % 100 == 0:
+            print(f"Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}] Loss: {loss.item() / len(data):.4f}  RECON: {rec.item() / len(data):.4f}  KL: {kl.item() / len(data):.4f}")
+    print(f"====> Epoch {epoch} Average loss: {train_loss / len(train_loader.dataset):.4f}")
+
+def main():
+    # Set device and hyperparameters.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    batch_size = 128
+    epochs = 20
+    learning_rate = 1e-3
+    loss_mode = 'bce'  # Change to 'mse' or 'gaussian' if desired.
+
+    # MNIST dataset and DataLoader.
+    train_loader = DataLoader(
+        datasets.MNIST('./data', train=True, download=True, transform=transforms.ToTensor()),
+        batch_size=batch_size, shuffle=True
+    )
+
+    # Instantiate the model, optimizer.
+    model = VAE(loss_mode=loss_mode).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Training loop.
+    for epoch in range(1, epochs + 1):
+        train(model, device, train_loader, optimizer, epoch)
+
+if __name__ == "__main__":
+    main()
