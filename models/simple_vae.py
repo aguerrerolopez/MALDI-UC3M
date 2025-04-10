@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from models.bottlenecks import MLP
+from utils.losses import kl_divergence, RE
 
 # Define the VAE model.
 class VAE(nn.Module):
@@ -29,7 +30,7 @@ class VAE(nn.Module):
             nn.ReLU(),
             nn.Linear(128, 32*2))
 
-        self.decoder_fc1 = nn.Sequential(
+        self.vae_decoder = nn.Sequential(
             nn.Linear(32, 128),
             nn.ReLU(),
             nn.Linear(128, 256))
@@ -47,7 +48,7 @@ class VAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z):
-        vae_dec = self.decoder_fc1(z)
+        vae_dec = self.vae_decoder(z)
         h3 = self.decoder_bot(vae_dec)
         # For BCE loss, it is customary to use a sigmoid output.
         if self.loss_mode == 'bce':
@@ -62,20 +63,12 @@ class VAE(nn.Module):
         recon = self.decode(z)
         return recon, mu, logvar
 
-def loss_function(recon_x, x, mu, logvar, loss_mode):
+def loss_function(recon_x, x, mu_q, logvar_q, loss_mode, reduction='sum'):
     # Calculate KL divergence loss.
-    kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    kl = kl_divergence(mu_q, logvar_q, reduction=reduction)
     
-    # Choose the reconstruction loss based on the keyword.
-    if loss_mode == 'bce':
-        rec_loss = F.binary_cross_entropy(recon_x, x, reduction='sum')
-    elif loss_mode == 'mse':
-        rec_loss = F.mse_loss(recon_x, x, reduction='sum')
-    elif loss_mode == 'gaussian':
-        # Assuming unit variance, the negative log-likelihood is proportional to MSE.
-        rec_loss = 0.5 * F.mse_loss(recon_x, x, reduction='sum')
-    else:
-        raise ValueError("Unsupported loss mode. Use 'bce', 'mse' or 'gaussian'.")
+    # Calculate reconstruction error.
+    rec_loss = RE(recon_x, x, loss_mode, reduction=reduction)
     
     return rec_loss + kl, rec_loss, kl
 
@@ -111,7 +104,7 @@ def main():
     )
 
     # Define the encoder and decoder networks.
-    bottleneck = MLP()
+    bottleneck = MLP() # This can be replaced with any other bottleneck architecture.
     encoder_bot = bottleneck.encoder
     decoder_bot = bottleneck.decoder
 

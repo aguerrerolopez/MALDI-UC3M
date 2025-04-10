@@ -13,9 +13,6 @@ class MLP(nn.Module):
         latent_size: size of the latent space (default: 256)
         hidden_size: size of the hidden layers (default: 512)
     Methods:
-        encode: forward pass through the encoder
-        decode: forward pass through the decoder
-        forward: forward pass through the encoder and decoder
     """
 
     def __init__(self, input_dim=28*28, latent_size=256, hidden_size=512):
