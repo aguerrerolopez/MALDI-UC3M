@@ -1,3 +1,5 @@
+import os
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,35 +7,32 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from models.bottlenecks import MLP
+
 # Define the VAE model.
 class VAE(nn.Module):
-    def __init__(self, loss_mode='bce'):
+    def __init__(self, encoder_bot, decoder_bot, loss_mode='bce'):
         """
         loss_mode can be 'bce', 'mse', or 'gaussian'
         """
         super(VAE, self).__init__()
         self.loss_mode = loss_mode
-        
-        # Bottleneck encoder: from 784 to 256.
-        self.encoder_bot = nn.Sequential(
-            nn.Linear(784, 512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
-            nn.ReLU())
-        # Latent space parameters: from 256 to 32 (for both mean and logvar).
+
+        # Bottleneck's encoder and decoder
+        self.encoder_bot = encoder_bot
+        self.decoder_bot = decoder_bot
+
+        # VAE's encoder and decoder
         self.vae_enc = nn.Sequential(
             nn.Linear(256, 128),
             nn.ReLU(),
             nn.Linear(128, 32*2))
-        
-        
-        # Decoder: from latent 32 to intermediate 256, then bottleneck decoder from 256 to 784.
-        self.decoder_fc1 = nn.Linear(32, 256)
-        self.decoder_bot = nn.Sequential(
+
+        self.decoder_fc1 = nn.Sequential(
+            nn.Linear(32, 128),
             nn.ReLU(),
-            nn.Linear(256, 512),
-            nn.ReLU(),
-            nn.Linear(512, 784))
+            nn.Linear(128, 256))
 
     def encode(self, x):
         bot = self.encoder_bot(x)
@@ -111,8 +110,13 @@ def main():
         batch_size=batch_size, shuffle=True
     )
 
+    # Define the encoder and decoder networks.
+    bottleneck = MLP()
+    encoder_bot = bottleneck.encoder
+    decoder_bot = bottleneck.decoder
+
     # Instantiate the model, optimizer.
-    model = VAE(loss_mode=loss_mode).to(device)
+    model = VAE(encoder_bot, decoder_bot, loss_mode=loss_mode).to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # Training loop.
