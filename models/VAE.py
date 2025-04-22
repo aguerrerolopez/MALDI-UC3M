@@ -1,3 +1,6 @@
+#### OLD
+
+
 import torch
 import torch.nn as nn
 from pytorch_model_summary import summary
@@ -67,7 +70,7 @@ class Encoder(nn.Module):
         return z
 
     def log_prob(self, x=None, mu_e=None, log_var_e=None, z=None):
-        """This function calculates the log probability of the input x, which is later used for caluclating the ELBO."""
+        """This function calculates the log probability of the input x, which is later used for calculating the ELBO."""
         # If x is provided, we need to calculate a corresponding sample (get mu, log-var and z)
         if x is not None:
             mu_e, log_var_e = self.encode(x)
@@ -154,7 +157,8 @@ class Decoder(nn.Module):
             # We sample from the Gaussian distribution
             std_d = torch.exp(0.5 * log_var_d)  # Compute standard deviation from log variance
             eps = torch.randn_like(mu_d)  # Sample from standard normal distribution
-            x_new = mu_d + eps * std_d  # Reparameterization trick
+            # x_new = mu_d + eps * std_d  # Reparameterization trick
+            x_new = mu_d
             
         else:
             raise ValueError('Either `bernoulli` or `gaussian`')
@@ -217,7 +221,8 @@ class Prior(nn.Module):
 
     def log_prob(self, z):
         """Computes the log probability of the given samples under the prior distribution."""
-        return log_standard_normal(z)
+        log_p = log_standard_normal(z, reduction='avg')
+        return log_p
     
 class VAE(nn.Module):
     """
@@ -246,7 +251,7 @@ class VAE(nn.Module):
         
         decoder_net = nn.Sequential(nn.Linear(L, 64), nn.ReLU(),
                                     nn.Linear(64, 128), nn.ReLU(),
-                                    nn.Linear(128, D))
+                                    nn.Linear(128, D))  # outputs x_recon
         
         # Print model summary
         print("VAE ENCODER:\n", summary(encoder_net, torch.zeros(1, D), show_input=False, show_hierarchical=False))
@@ -259,24 +264,11 @@ class VAE(nn.Module):
 
         self.likelihood_type = likelihood_type
 
-    def forward(self, x, reduction='avg'):
+    def forward(self, x):
         # 1) Encode
         mu_e, log_var_e = self.encoder.encode(x)
         # 2) Sample z
         z = self.encoder.sample(mu_e=mu_e, log_var_e=log_var_e)
-
-        # 3) compute KL
-        # log_p_z = self.prior.log_prob(z)                                         # log p(z)
-        # log_q_z = self.encoder.log_prob(mu_e=mu_e, log_var_e=log_var_e, z=z)     # log q(z|x)
-        # KL = KL_divergence(log_p_z, log_q_z)  # KL(q(z|x) || p(z))
-
-        # Older approaches:
-        # RE = self.decoder.log_prob(x, z) # Reconstruction error
-        # KL = (self.prior.log_prob(z) - self.encoder.log_prob(mu_e=mu_e, log_var_e=log_var_e, z=z)).sum(-1) # KL divergence
-
-        # RE = RE_log_prob(x, z, self.decoder)
-        # KL = KL_divergence(self.prior, self.encoder, mu_e, log_var_e, z)
-        # ELBO, RE, KL = calculate_ELBO(x, z, self.encoder, self.prior, self.decoder, reduction=reduction)
 
         return z, mu_e, log_var_e
 
