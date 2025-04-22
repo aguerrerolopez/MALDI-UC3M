@@ -1,118 +1,83 @@
-import sys
 import os
-import time
+import sys
 import torch
-import numpy as np
-import torch.nn as nn
+import time
 
-from torch.utils.data import DataLoader, random_split
+import torch.optim as optim
 from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from models.bottlenecks import MLP
-from models.VAE import VAE  # The "middle" VAE
-from utils.Trainer import Trainer  # The trainer class that does MLP -> VAE -> MLP
+from models.AE_VAE import VAE
+from utils.losses import loss_function
+
+def train(model, device, train_loader, optimizer, epoch):
+    model.train()
+    train_loss = 0.0
+    for batch_idx, (data, _) in enumerate(train_loader):
+        # Flatten the 28x28 image to a 784 vector.
+        data = data.view(-1, 784).to(device)
+        optimizer.zero_grad()
+        recon_batch, mu, logvar = model(data)
+        loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
+        loss.backward()
+        train_loss += loss.item()
+        optimizer.step()
+        
+        if batch_idx % 100 == 0:
+            print(f"Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}] Loss: {loss.item() / len(data):.4f}  RECON: {rec.item() / len(data):.4f}  KL: {kl.item() / len(data):.4f}")
+    print(f"====> Epoch {epoch} Average loss: {train_loss / len(train_loader.dataset):.4f}")
 
 def main():
 
     # ------------------------------
     # 1) SETUP: data, hyperparams
     # ------------------------------
+
     data_name = 'MNIST'
     name = 'mlp_vae'
     result_dir = f'results/{data_name}_{name}_{time.strftime("%Y%m%d_%H%M%S")}/'
     os.makedirs(result_dir, exist_ok=True)
+
+    # Set device and hyperparameters.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    batch_size = 128
+    epochs = 20
+    learning_rate = 1e-3
+    loss_mode = 'bce'  # Change to 'mse' or 'gaussian' if desired.
 
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Lambda(lambda x: x.view(-1))  # Flatten from 28x28 => 784
     ])
 
-    # Load full training dataset
-    full_train_data = datasets.MNIST(
-        root="./data",
-        train=True,
-        transform=transform,
-        download=True
-    )
+    # MNIST dataset and DataLoader.
+    train_data = datasets.MNIST(root="./data", train=True, transform=transform, download=True)
+    test_data = datasets.MNIST(root="./data", train=False, transform=transform, download=True)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
-    # Split into train and validation sets (90% train, 10% validation)
-    valid_size = 0.1
-    num_train = len(full_train_data)
-    split = int(np.floor(valid_size * num_train))
-    train_data, val_data = random_split(full_train_data, [num_train - split, split])
-
-    # Load test set
-    test_data = datasets.MNIST(
-        root="./data",
-        train=False,
-        transform=transform,
-        download=True
-    )
-
-    # Create DataLoaders
-    training_loader = DataLoader(train_data, batch_size=64, shuffle=True)
-    val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
-    test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
 
     # ------------------------------
     # 2) DEFINE MODELS
     # ------------------------------
-    # MLP model
-    D = 784   # MNIST images are 28x28
-    embed_dim = 256  # MLP's embedding dimension
-    mlp_model = MLP(input_dim=D, latent_size=embed_dim)
 
-    # VAE model (that takes the MLP's embedding dimension as input dimension)
-    latent_dim = 32  # e.g. your VAE's internal latent dimension
-    vae_model = VAE(D=embed_dim, L=latent_dim)  # So it expects input of size 256, outputs embedding_recon of size 256
+    # Define the encoder and decoder networks.
+    bottleneck = MLP() # This can be replaced with any other bottleneck architecture.
+    encoder_bot = bottleneck.encoder
+    decoder_bot = bottleneck.decoder
 
-    # ------------------------------
-    # 3) SETUP OPTIMIZER
-    # ------------------------------
-    lr = 1e-3
-    # combine parameters from both MLP and VAE
-    optimizer = torch.optim.Adam(
-        list(mlp_model.parameters()) + list(vae_model.parameters()), lr=lr
-    )
+    # Instantiate the model, optimizer.
+    model = VAE(encoder_bot, decoder_bot, loss_mode=loss_mode).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # ------------------------------
-    # 4) CREATE TRAINER
+    # 3) TRAIN
     # ------------------------------
-    trainer = Trainer(
-        ae_model=mlp_model,
-        vae_model=vae_model,
-        train_loader=training_loader,
-        val_loader=val_loader,
-        optimizer=optimizer,
-        num_epochs=20,       # or 100, etc.
-        device='cpu'         # or 'cuda'
-    )
 
-    # ------------------------------
-    # 5) TRAIN
-    # ------------------------------
-    trainer.train()
-
-    # Optionally: evaluate on test set or do advanced logging
-    # e.g. we can do a quick loop:
-    test_loss = 0.0
-    test_samples = 0
-    with torch.no_grad():
-        for x, _ in test_loader:
-            embedding = mlp_model.encode(x)
-            embedding_recon, kl, z, mu, log_var = vae_model(embedding)
-            x_recon = mlp_model.decode(embedding_recon)
-
-            # e.g. MSE or BCE
-            re = nn.functional.binary_cross_entropy(x_recon, x, reduction='sum')
-            kl_sum = kl.sum()
-
-            loss = re + kl_sum
-            test_loss += loss.item()
-            test_samples += x.size(0)
-    test_loss /= test_samples
-    print(f"Final Test Loss: {test_loss:.4f}")
+    for epoch in range(1, epochs + 1):
+        train(model, device, train_loader, optimizer, epoch)
 
 if __name__ == "__main__":
     main()
