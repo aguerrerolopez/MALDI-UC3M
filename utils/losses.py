@@ -3,36 +3,14 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-def RE_log_prob(x, x_recon, distribution='bernoulli', reduction='avg'):
-
-    # In the case of Bernoulli distribution
-    if distribution == 'bernoulli':
-        # In the Bernoulli case , we have x_d \in {0 ,1}. 
-        # Therefore, it is enough to output a single probability,
-        # because p(x_d =1|z) = \theta and p(x_d =0|z) = 1− \theta
-        mu_d = torch.sigmoid(x_recon) # why exactly sigmoid?
-        log_p = log_bernoulli(x, mu_d, reduction=reduction, dim=-1)
-
-        # How to choose the reduction
-        # Si la entrada es muy pequeña y la avg da casi cero porque de media las muestras son 0 entonces es mejor sum
-        # Si la entrada y salida son fotos por ejemplo y están en valores grandes pues avg
+def loss_function(recon_x, x, mu_q, logvar_q, loss_mode, reduction='sum'):
+    # Calculate KL divergence loss.
+    kl = kl_divergence(mu_q, logvar_q, reduction=reduction)
     
-    # In the case of Gaussian distribution
-    elif distribution == 'gaussian':
-        # The decoder outputs just the mean, std is fixed
-        mu_d = x_recon
-        log_var_d = torch.log(torch.tensor(0.1))  # Fixed log variance (log(0.1) or log(0.2), etc.) # 0.1 es mucho para los maldis, 10% de la media de mis datos
-        log_p = log_normal_diag(x, mu_d, log_var_d, reduction=reduction)
+    # Calculate reconstruction error.
+    rec = rec_loss(recon_x, x, loss_mode, reduction=reduction)
     
-    else:
-        raise ValueError('Either `bernoulli` or `gaussian`')
-    
-    if reduction == 'avg':
-        return log_p.mean()
-    elif reduction == 'sum':
-        return log_p.sum()
-    else:
-        return log_p  # shape [batch]
+    return rec + kl, rec, kl
 
 def kl_divergence(mu_q, log_var_q, reduction='sum'):
     """
@@ -73,7 +51,7 @@ def kl_divergence(mu_q, log_var_q, reduction='sum'):
     else:
         return kl
 
-def RE(recon_x, x, loss_mode, reduction='sum'):
+def rec_loss(recon_x, x, loss_mode, reduction='sum'):
 
     # Choose the reconstruction loss based on the keyword.
     if loss_mode == 'bce':
