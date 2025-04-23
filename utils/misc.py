@@ -12,7 +12,8 @@ def samples_real(name, test_loader):
     # REAL-------
     num_x = 4
     num_y = 4
-    x = next(iter(test_loader)).detach().numpy()
+    x, _ = next(iter(test_loader))
+    x = x.detach().cpu().numpy()
 
     fig, ax = plt.subplots(num_x, num_y)
     for i, ax in enumerate(ax.flatten()):
@@ -22,6 +23,30 @@ def samples_real(name, test_loader):
 
     plt.savefig(name+'_real_images.pdf', bbox_inches='tight')
     plt.close()
+
+# def samples_generated(name, model, extra_name=''):
+#     """
+#     Generate samples from the model and save them as a pdf
+#     :param name: name of the file
+#     :param model: trained model
+#     :param device: torch device
+#     :param extra_name: extra name for the file
+#     :return: None
+#     """
+#     model.eval()
+#     with torch.no_grad():
+#         num_x = 4
+#         num_y = 4
+#         x = model.sample(num_x * num_y).detach().cpu().numpy()
+
+#     fig, ax = plt.subplots(num_x, num_y)
+#     for i, ax in enumerate(ax.flatten()):
+#         plottable_image = np.reshape(x[i], (int(np.sqrt(len(x[i]))), int(np.sqrt(len(x[i])))))
+#         ax.imshow(plottable_image, cmap='gray')
+#         ax.axis('off')
+
+#     plt.savefig(name + '_generated_images' + extra_name + '.pdf', bbox_inches='tight')
+#     plt.close()
 
 def samples_generated(name, data_loader, extra_name=''):
     """
@@ -56,7 +81,7 @@ def samples_generated(name, data_loader, extra_name=''):
 
 def plot_curve(name, data, title='_loss_curve', legend=None):
     """
-    Plot the negative log-likelihood curve
+    Plot the loss curve
     :param name (str): path to store the file
     :param data (list): data to plot
     :param title (str): title of the plot
@@ -68,110 +93,124 @@ def plot_curve(name, data, title='_loss_curve', legend=None):
     assert len(data) == len(legend), "Data and legend should have the same length"
 
     for i in range(len(data)):
-        plt.plot(np.arange(len(data[i])), data[i], linewidth='3', label=legend[i])
+        plt.plot(np.arange(len(data[i])), data[i], linewidth=3, label=legend[i])
     plt.xlabel('epochs')
     plt.ylabel('loss')
     plt.legend()
     plt.savefig(name + title + '.pdf', bbox_inches='tight')
     plt.close()
 
-def training_VAE(name, max_patience, num_epochs, model, optimizer, training_loader, val_loader):
+def early_stopping(val_losses, patience):
     """
-    Training loop
-    :param name: name of the file
-    :param max_patience: maximum patience
-    :param num_epochs: number of epochs
-    :param model: model initialization
-    :param optimizer: optimizer initialization
-    :param training_loader: training data loader
-    :param val_loader: validation data loader
-    :return nll_val: negative log-likelihood values
+    Early stopping check based on validation losses
+    :param val_losses: list of validation losses
+    :param patience: number of epochs to wait
+    :return: True if should stop early, False otherwise
     """
+    if len(val_losses) < patience + 1:
+        return False
+    recent_losses = val_losses[-patience-1:]
+    if min(recent_losses) != recent_losses[-1]:
+        return False
+    return True
 
-    nll_val = []
-    RE_val = []
-    KL_val = []
-    best_nll = 1000.
-    patience = 0
+# def training_VAE(name, max_patience, num_epochs, model, optimizer, training_loader, val_loader):
+#     """
+#     Training loop
+#     :param name: name of the file
+#     :param max_patience: maximum patience
+#     :param num_epochs: number of epochs
+#     :param model: model initialization
+#     :param optimizer: optimizer initialization
+#     :param training_loader: training data loader
+#     :param val_loader: validation data loader
+#     :return nll_val: negative log-likelihood values
+#     """
 
-    # Main loop
-    for e in range(num_epochs):
-        # TRAINING
-        model.train()
-        for batch in training_loader:
-            if hasattr(model, 'dequantization'):
-                if model.dequantization:
-                    batch = batch + torch.rand(batch.shape)
-            batch, _ = batch if len(batch) == 2 else batch # for datasets with labels it is necessary to just take the first element (the data)
-            loss, _, _ = model.forward(batch)
+#     nll_val = []
+#     RE_val = []
+#     KL_val = []
+#     best_nll = 1000.
+#     patience = 0
 
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()
+#     # Main loop
+#     for e in range(num_epochs):
+#         # TRAINING
+#         model.train()
+#         for batch in training_loader:
+#             if hasattr(model, 'dequantization'):
+#                 if model.dequantization:
+#                     batch = batch + torch.rand(batch.shape)
+#             batch, _ = batch if len(batch) == 2 else batch # for datasets with labels it is necessary to just take the first element (the data)
+#             loss, _, _ = model.forward(batch)
 
-        # Validation
-        loss_val, RE, KL = evaluation_VAE(val_loader, model_best=model, epoch=e)
-        nll_val.append(loss_val)  # save for plotting
-        RE_val.append(RE) # save for plotting
-        KL_val.append(KL) # save for plotting
+#             optimizer.zero_grad()
+#             loss.backward(retain_graph=True)
+#             optimizer.step()
 
-        # Save best model
-        if e == 0 or (loss_val < best_nll):
-            print("saved!")
-            torch.save(model, name + ".model")
-            best_nll = loss_val
-            patience = 0
-            # Generate samples
-            samples_generated(name, val_loader, extra_name=f"_epoch_{e}")
-        else:
-            patience += 1
+#         # Validation
+#         loss_val, RE, KL = evaluation_VAE(val_loader, model_best=model, epoch=e)
+#         nll_val.append(loss_val)  # save for plotting
+#         RE_val.append(RE) # save for plotting
+#         KL_val.append(KL) # save for plotting
 
-        if patience > max_patience:
-            break
+#         # Save best model
+#         if e == 0 or (loss_val < best_nll):
+#             print("saved!")
+#             torch.save(model, name + ".model")
+#             best_nll = loss_val
+#             patience = 0
+#             # Generate samples
+#             samples_generated(name, val_loader, extra_name=f"_epoch_{e}")
+#         else:
+#             patience += 1
 
-    nll_val = np.asarray(nll_val)
-    RE_val = np.asarray(RE_val)
-    KL_val = np.asarray(KL_val)
+#         if patience > max_patience:
+#             break
 
-    return nll_val, RE_val, KL_val
+#     nll_val = np.asarray(nll_val)
+#     RE_val = np.asarray(RE_val)
+#     KL_val = np.asarray(KL_val)
 
-def evaluation_VAE(test_loader, name=None, model_best=None, epoch=None):
-    """
-    Evaluate the model on the test set
-    :param test_loader: test data loader
-    :param name: name of the file
-    :param model_best: model initialization (default: VAE())
-    :param epoch: epoch number
-    :return: loss
-    """
-    # EVALUATION
-    if model_best is None:
-        # load best performing model
-        model_best = torch.load(name + '.model', weights_only=False)
+#     return nll_val, RE_val, KL_val
 
-    model_best.eval()
-    loss = 0.
-    RE = 0.
-    KL = 0.
-    N = 0.
-    for indx_batch, test_batch in enumerate(test_loader):
-        test_batch, _ = test_batch if len(test_batch) == 2 else test_batch # for datasets with labels it is necessary to just take the first element (the data)
-        loss_t, RE_t, KL_t = model_best.forward(test_batch, reduction='sum')
-        loss = loss + loss_t.item()
-        RE = RE + RE_t.item()
-        KL = KL + KL_t.item()
-        N = N + test_batch.shape[0]
-    loss /= N
-    RE /= N
-    KL /= N
+# def evaluation_VAE(test_loader, name=None, model_best=None, epoch=None):
+#     """
+#     Evaluate the model on the test set
+#     :param test_loader: test data loader
+#     :param name: name of the file
+#     :param model_best: model initialization (default: VAE())
+#     :param epoch: epoch number
+#     :return: loss
+#     """
+#     # EVALUATION
+#     if model_best is None:
+#         # load best performing model
+#         model_best = torch.load(name + '.model', weights_only=False)
 
-    if epoch is None:
-        print(f'FINAL LOSS: nll={loss}')
-        print(f'FINAL RE: {RE}')
-        print(f'FINAL KL: {KL}')
-    else:
-        print(f'Epoch: {epoch}, val nll={loss}')
-        print(f'Epoch: {epoch}, val RE: {RE}')
-        print(f'Epoch: {epoch}, val KL: {KL}')
+#     model_best.eval()
+#     loss = 0.
+#     RE = 0.
+#     KL = 0.
+#     N = 0.
+#     for indx_batch, test_batch in enumerate(test_loader):
+#         test_batch, _ = test_batch if len(test_batch) == 2 else test_batch # for datasets with labels it is necessary to just take the first element (the data)
+#         loss_t, RE_t, KL_t = model_best.forward(test_batch, reduction='sum')
+#         loss = loss + loss_t.item()
+#         RE = RE + RE_t.item()
+#         KL = KL + KL_t.item()
+#         N = N + test_batch.shape[0]
+#     loss /= N
+#     RE /= N
+#     KL /= N
 
-    return loss, RE, KL
+#     if epoch is None:
+#         print(f'FINAL LOSS: nll={loss}')
+#         print(f'FINAL RE: {RE}')
+#         print(f'FINAL KL: {KL}')
+#     else:
+#         print(f'Epoch: {epoch}, val nll={loss}')
+#         print(f'Epoch: {epoch}, val RE: {RE}')
+#         print(f'Epoch: {epoch}, val KL: {KL}')
+
+#     return loss, RE, KL

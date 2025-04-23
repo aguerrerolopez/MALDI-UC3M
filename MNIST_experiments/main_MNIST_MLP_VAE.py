@@ -11,23 +11,31 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from models.bottlenecks import MLP
 from models.AE_VAE import VAE
 from utils.losses import loss_function
+from utils.misc import samples_generated, samples_real, plot_curve, early_stopping
 
 def train(model, device, train_loader, optimizer, epoch):
     model.train()
     train_loss = 0.0
+    RE_vals = []
+    KL_vals = []
+
     for batch_idx, (data, _) in enumerate(train_loader):
-        # Flatten the 28x28 image to a 784 vector.
-        data = data.view(-1, 784).to(device)
+        data = data.to(device)
         optimizer.zero_grad()
         recon_batch, mu, logvar = model(data)
         loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
         loss.backward()
-        train_loss += loss.item()
         optimizer.step()
+
+        train_loss += loss.item()
+        RE_vals.append(rec.item())
+        KL_vals.append(kl.item())
         
         if batch_idx % 100 == 0:
             print(f"Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}] Loss: {loss.item() / len(data):.4f}  RECON: {rec.item() / len(data):.4f}  KL: {kl.item() / len(data):.4f}")
     print(f"====> Epoch {epoch} Average loss: {train_loss / len(train_loader.dataset):.4f}")
+
+    return train_loss / len(train_loader.dataset), sum(RE_vals)/len(RE_vals), sum(KL_vals)/len(KL_vals)
 
 def main():
 
@@ -43,7 +51,8 @@ def main():
     # Set device and hyperparameters.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     batch_size = 128
-    epochs = 20
+    epochs = 10
+    patience = 10
     learning_rate = 1e-3
     loss_mode = 'bce'  # Change to 'mse' or 'gaussian' if desired.
 
@@ -76,8 +85,30 @@ def main():
     # 3) TRAIN
     # ------------------------------
 
+    nll_curve = []
+    RE_curve = []
+    KL_curve = []
+    best_val_loss = float('inf')
+    patience_counter = 0
+
     for epoch in range(1, epochs + 1):
-        train(model, device, train_loader, optimizer, epoch)
+        nll, RE, KL = train(model, device, train_loader, optimizer, epoch)
+        nll_curve.append(nll)
+        RE_curve.append(RE)
+        KL_curve.append(KL)
+
+        # # Early stopping check
+        # best_val_loss, patience_counter, stop = early_stopping(nll, best_val_loss, patience_counter, patience)
+        # if stop:
+        #     print("Early stopping triggered.")
+        #     break
+
+        # Save model
+        torch.save(model.state_dict(), os.path.join(result_dir, f"{name}_epoch_{epoch}.pth"))
+        # samples_generated(name=result_dir + name, data_loader=test_loader, extra_name=f"_epoch_{epoch}")
+
+    plot_curve(result_dir + name, [nll_curve, RE_curve, KL_curve], title='_NLL_RE_KL', legend=['NLL', 'RE', 'KL'])
+    samples_real(result_dir + name, test_loader)
 
 if __name__ == "__main__":
     main()
