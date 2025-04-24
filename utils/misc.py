@@ -1,216 +1,123 @@
-import numpy as np
+import os
+import sys
 import torch
+import numpy as np
 import matplotlib.pyplot as plt
 
-def samples_real(name, test_loader):
-    """
-    Save real samples as a pdf
-    :param name: name of the file
-    :param test_loader: test data loader
-    :return: None
-    """
-    # REAL-------
-    num_x = 4
-    num_y = 4
-    x, _ = next(iter(test_loader))
-    x = x.detach().cpu().numpy()
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from utils.losses import loss_function
 
-    fig, ax = plt.subplots(num_x, num_y)
-    for i, ax in enumerate(ax.flatten()):
-        plottable_image = np.reshape(x[i], (int(np.sqrt(len(x[i]))), int(np.sqrt(len(x[i])))))
-        ax.imshow(plottable_image, cmap='gray')
-        ax.axis('off')
+def plot_train_val_curves(name, train_data, val_data, title="_NLL_RE_KL", legend=['NLL', 'RE', 'KL']):
 
-    plt.savefig(name+'_real_images.pdf', bbox_inches='tight')
+    assert len(train_data) == len(val_data) == 3, "train_data and val_data must contain as many elements as legend values (default: NLL, RE, KL)."
+
+    nll_curve_train, RE_curve_train, KL_curve_train = train_data
+    nll_curve_val, RE_curve_val, KL_curve_val = val_data
+
+    plt.figure(figsize=(10, 6))
+
+    # Colors: NLL = blue, RE = orange, KL = green
+    colors = ['tab:blue', 'tab:orange', 'tab:green']
+    epochs = np.arange(len(nll_curve_train))
+
+    # Plot training curves
+    plt.plot(epochs, nll_curve_train, linestyle='-', color=colors[0], label=legend[0] + ' (train)')
+    plt.plot(epochs, RE_curve_train, linestyle='-', color=colors[1], label=legend[1] + ' (train)')
+    plt.plot(epochs, KL_curve_train, linestyle='-', color=colors[2], label=legend[2] + ' (train)')
+
+    # Plot validation curves
+    plt.plot(epochs, nll_curve_val, linestyle='--', color=colors[0], label=legend[0] + ' (val)')
+    plt.plot(epochs, RE_curve_val, linestyle='--', color=colors[1], label=legend[1] + ' (val)')
+    plt.plot(epochs, KL_curve_val, linestyle='--', color=colors[2], label=legend[2] + ' (val)')
+
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title(title)
+    plt.legend(loc="upper right")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(name + title + ".pdf", bbox_inches='tight')
     plt.close()
 
-# def samples_generated(name, model, extra_name=''):
-#     """
-#     Generate samples from the model and save them as a pdf
-#     :param name: name of the file
-#     :param model: trained model
-#     :param device: torch device
-#     :param extra_name: extra name for the file
-#     :return: None
-#     """
-#     model.eval()
-#     with torch.no_grad():
-#         num_x = 4
-#         num_y = 4
-#         x = model.sample(num_x * num_y).detach().cpu().numpy()
-
-#     fig, ax = plt.subplots(num_x, num_y)
-#     for i, ax in enumerate(ax.flatten()):
-#         plottable_image = np.reshape(x[i], (int(np.sqrt(len(x[i]))), int(np.sqrt(len(x[i])))))
-#         ax.imshow(plottable_image, cmap='gray')
-#         ax.axis('off')
-
-#     plt.savefig(name + '_generated_images' + extra_name + '.pdf', bbox_inches='tight')
-#     plt.close()
-
-def samples_generated(name, data_loader, extra_name=''):
+def early_stopping(epoch, nll_val, best_nll, patience, max_patience, model, name, path, saving='best'):
     """
-    Generate samples from the model and save them as a pdf
-    :param name: name of the file
-    :param data_loader: data loader
-    :param extra_name: extra name for the file
-    :return: None
+    Early stopping function
+    :param epoch: current epoch
+    :param nll_val: negative log-likelihood values
+    :param best_nll: best negative log-likelihood value
+    :param patience: current patience
+    :param max_patience: maximum patience
+    :return: updated patience and best_nll
     """
+    if epoch == 0 or (nll_val < best_nll):
+        saved_path = os.path.join(path, f"{name}_bestmodel.pth") if saving == 'best' else os.path.join(path, f"{name}_epoch_{epoch}.pth")
+        torch.save(model.state_dict(), saved_path)
+        print("saved!")
+        best_nll = nll_val
+        patience = 0
+    else:
+        patience += 1
 
-    x = next(iter(data_loader))
-    x, _ = x if len(x) == 2 else x
-    x = x.detach().numpy() if len(x) == 2 else x.detach().numpy()
+    if patience > max_patience:
+        return True, best_nll, patience, saved_path
 
-    # GENERATIONS-------
-    model_best = torch.load(name + '.model', weights_only=False)
-    model_best.eval()
+    return False, best_nll, patience, saved_path
 
-    num_x = 4
-    num_y = 4
-    x = model_best.sample(num_x * num_y)
-    x = x.detach().numpy()
+def train(model, device, train_loader, optimizer, epoch):
+    model.train()
+    train_loss = 0.0
+    RE_vals = 0.0
+    KL_vals = 0.0
 
-    fig, ax = plt.subplots(num_x, num_y)
-    for i, ax in enumerate(ax.flatten()):
-        plottable_image = np.reshape(x[i], (int(np.sqrt(len(x[i]))), int(np.sqrt(len(x[i])))))
-        ax.imshow(plottable_image, cmap='gray')
-        ax.axis('off')
+    for batch_idx, (data, _) in enumerate(train_loader):
+        data = data.to(device)
+        optimizer.zero_grad()
+        recon_batch, mu, logvar = model(data)
+        loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
+        loss.backward()
+        optimizer.step()
 
-    plt.savefig(name + '_generated_images' + extra_name + '.pdf', bbox_inches='tight')
-    plt.close()
+        train_loss += loss.item()
+        RE_vals += rec.item()
+        KL_vals += kl.item()
+        
+        if batch_idx % 100 == 0:
+            print(f"Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}] Loss: {loss.item() / len(data):.4f}  RECON: {rec.item() / len(data):.4f}  KL: {kl.item() / len(data):.4f}")
+    print(f"====> Epoch {epoch} Average loss: {train_loss / len(train_loader.dataset):.4f}  RECON: {RE_vals / len(train_loader.dataset):.4f}  KL: {KL_vals / len(train_loader.dataset):.4f}")
 
-def plot_curve(name, data, title='_loss_curve', legend=None):
-    """
-    Plot the loss curve
-    :param name (str): path to store the file
-    :param data (list): data to plot
-    :param title (str): title of the plot
-    :param legend (list): legend of the plot
-    """
-    if not isinstance(data, list):
-        data = [data]
+    return train_loss / len(train_loader.dataset), RE_vals / len(train_loader.dataset), KL_vals / len(train_loader.dataset)
 
-    assert len(data) == len(legend), "Data and legend should have the same length"
+def evaluate(test_loader, name=None, model=None, epoch=None, device="cpu"):
 
-    for i in range(len(data)):
-        plt.plot(np.arange(len(data[i])), data[i], linewidth=3, label=legend[i])
-    plt.xlabel('epochs')
-    plt.ylabel('loss')
-    plt.legend()
-    plt.savefig(name + title + '.pdf', bbox_inches='tight')
-    plt.close()
+    if model is None:
+        assert name is not None, "If no model is passed, 'name' must be given to load the model."
+        model = torch.load(name + '.model', map_location=device)
 
-def early_stopping(val_losses, patience):
-    """
-    Early stopping check based on validation losses
-    :param val_losses: list of validation losses
-    :param patience: number of epochs to wait
-    :return: True if should stop early, False otherwise
-    """
-    if len(val_losses) < patience + 1:
-        return False
-    recent_losses = val_losses[-patience-1:]
-    if min(recent_losses) != recent_losses[-1]:
-        return False
-    return True
+    model.to(device)
+    model.eval()
 
-# def training_VAE(name, max_patience, num_epochs, model, optimizer, training_loader, val_loader):
-#     """
-#     Training loop
-#     :param name: name of the file
-#     :param max_patience: maximum patience
-#     :param num_epochs: number of epochs
-#     :param model: model initialization
-#     :param optimizer: optimizer initialization
-#     :param training_loader: training data loader
-#     :param val_loader: validation data loader
-#     :return nll_val: negative log-likelihood values
-#     """
+    total_loss = 0.0
+    total_RE = 0.0
+    total_KL = 0.0
 
-#     nll_val = []
-#     RE_val = []
-#     KL_val = []
-#     best_nll = 1000.
-#     patience = 0
+    with torch.no_grad():
+        for batch_idx, (data, _) in enumerate(test_loader):
+            data = data.to(device)
 
-#     # Main loop
-#     for e in range(num_epochs):
-#         # TRAINING
-#         model.train()
-#         for batch in training_loader:
-#             if hasattr(model, 'dequantization'):
-#                 if model.dequantization:
-#                     batch = batch + torch.rand(batch.shape)
-#             batch, _ = batch if len(batch) == 2 else batch # for datasets with labels it is necessary to just take the first element (the data)
-#             loss, _, _ = model.forward(batch)
+            recon_batch, mu, logvar = model(data)
+            loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
 
-#             optimizer.zero_grad()
-#             loss.backward(retain_graph=True)
-#             optimizer.step()
+            total_loss += loss.item()
+            total_RE += rec.item()
+            total_KL += kl.item()
 
-#         # Validation
-#         loss_val, RE, KL = evaluation_VAE(val_loader, model_best=model, epoch=e)
-#         nll_val.append(loss_val)  # save for plotting
-#         RE_val.append(RE) # save for plotting
-#         KL_val.append(KL) # save for plotting
+    avg_nll = total_loss / len(test_loader.dataset)
+    avg_RE = total_RE / len(test_loader.dataset)
+    avg_KL = total_KL / len(test_loader.dataset)
 
-#         # Save best model
-#         if e == 0 or (loss_val < best_nll):
-#             print("saved!")
-#             torch.save(model, name + ".model")
-#             best_nll = loss_val
-#             patience = 0
-#             # Generate samples
-#             samples_generated(name, val_loader, extra_name=f"_epoch_{e}")
-#         else:
-#             patience += 1
+    if epoch is not None:
+        print(f"Epoch {epoch} VALIDATION → NLL: {avg_nll:.4f} | RE: {avg_RE:.4f} | KL: {avg_KL:.4f}")
+    else:
+        print(f"FINAL VALIDATION → NLL: {avg_nll:.4f} | RE: {avg_RE:.4f} | KL: {avg_KL:.4f}")
 
-#         if patience > max_patience:
-#             break
-
-#     nll_val = np.asarray(nll_val)
-#     RE_val = np.asarray(RE_val)
-#     KL_val = np.asarray(KL_val)
-
-#     return nll_val, RE_val, KL_val
-
-# def evaluation_VAE(test_loader, name=None, model_best=None, epoch=None):
-#     """
-#     Evaluate the model on the test set
-#     :param test_loader: test data loader
-#     :param name: name of the file
-#     :param model_best: model initialization (default: VAE())
-#     :param epoch: epoch number
-#     :return: loss
-#     """
-#     # EVALUATION
-#     if model_best is None:
-#         # load best performing model
-#         model_best = torch.load(name + '.model', weights_only=False)
-
-#     model_best.eval()
-#     loss = 0.
-#     RE = 0.
-#     KL = 0.
-#     N = 0.
-#     for indx_batch, test_batch in enumerate(test_loader):
-#         test_batch, _ = test_batch if len(test_batch) == 2 else test_batch # for datasets with labels it is necessary to just take the first element (the data)
-#         loss_t, RE_t, KL_t = model_best.forward(test_batch, reduction='sum')
-#         loss = loss + loss_t.item()
-#         RE = RE + RE_t.item()
-#         KL = KL + KL_t.item()
-#         N = N + test_batch.shape[0]
-#     loss /= N
-#     RE /= N
-#     KL /= N
-
-#     if epoch is None:
-#         print(f'FINAL LOSS: nll={loss}')
-#         print(f'FINAL RE: {RE}')
-#         print(f'FINAL KL: {KL}')
-#     else:
-#         print(f'Epoch: {epoch}, val nll={loss}')
-#         print(f'Epoch: {epoch}, val RE: {RE}')
-#         print(f'Epoch: {epoch}, val KL: {KL}')
-
-#     return loss, RE, KL
+    return avg_nll, avg_RE, avg_KL
