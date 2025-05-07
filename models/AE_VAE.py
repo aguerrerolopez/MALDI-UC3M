@@ -3,12 +3,13 @@ import torch.nn as nn
 
 
 class VAE(nn.Module):
-    def __init__(self, encoder_bot, decoder_bot, loss_mode='bce'):
+    def __init__(self, encoder_bot, decoder_bot, loss_mode='bce', tsne='True'):
         """
         loss_mode can be 'bce', 'mse', or 'gaussian'
         """
         super(VAE, self).__init__()
         self.loss_mode = loss_mode
+        self.tsne = tsne
 
         # Bottleneck's encoder and decoder
         self.encoder_bot = encoder_bot
@@ -27,6 +28,7 @@ class VAE(nn.Module):
 
     def encode(self, x):
         bot = self.encoder_bot(x)
+        #TODO: if tsne is True, we need to add the tsne implementation here.
         # Get latent space parameters.
         mu, logvar = self.vae_enc(bot).chunk(2, dim=-1)
         return mu, logvar
@@ -39,6 +41,7 @@ class VAE(nn.Module):
 
     def decode(self, z):
         vae_dec = self.vae_decoder(z)
+        #TODO: if tsne is True, we need to add the tsne implementation here.
         h3 = self.decoder_bot(vae_dec)
         # For BCE loss, it is customary to use a sigmoid output.
         if self.loss_mode == 'bce':
@@ -50,5 +53,6 @@ class VAE(nn.Module):
         # Encode input, reparameterize, then decode.
         mu, logvar = self.encode(x)
         z = self.reparameterize(mu, logvar)
+        #TODO: if tsne is True, we need to add the tsne implementation here.
         recon = self.decode(z)
         return recon, mu, logvar
