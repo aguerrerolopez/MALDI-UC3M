@@ -1,7 +1,4 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from pytorch_model_summary import summary
 
 
 # MLP Encoder and Decoder (e.g. for MNIST)
@@ -15,26 +12,30 @@ class MLP(nn.Module):
     Methods:
     """
 
-    def __init__(self, input_dim=28*28, latent_size=256, hidden_size=512):
+    def __init__(self, input_dim=2000, latent_size=256):
         super(MLP, self).__init__()
 
         self.input_dim = input_dim
         self.latent_size = latent_size
-        self.hidden_size = hidden_size
 
         # Encoder: Fully connected layers
         self.encoder = nn.Sequential(
-            nn.Linear(self.input_dim, self.hidden_size),
+            nn.Linear(self.input_dim, 1024),
             nn.ReLU(),
-            nn.Linear(self.hidden_size, self.latent_size),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Linear(512, self.latent_size),
             nn.ReLU())
 
         # Decoder: Fully connected layers
         self.decoder = nn.Sequential(
             nn.ReLU(),
-            nn.Linear(self.latent_size, self.hidden_size),
+            nn.Linear(self.latent_size, 512),
             nn.ReLU(),
-            nn.Linear(self.hidden_size, self.input_dim)
+            nn.Linear(512, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, self.input_dim),
+            nn.Sigmoid()  # Sigmoid activation for output layer to be between 0 and 1
         )
 
     # def forward_encode(self, x):
