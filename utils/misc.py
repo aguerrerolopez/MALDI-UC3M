@@ -7,6 +7,13 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.losses import loss_function
 
+def collate_spectra(batch):
+    intensities = torch.stack([torch.tensor(sample[0].intensity, dtype=torch.float32) for sample in batch])
+    mzs = torch.stack([torch.tensor(sample[0].mz, dtype=torch.float32) for sample in batch])
+    labels = [sample[1] for sample in batch]
+    metadata = [sample[2] for sample in batch]
+    return (intensities, mzs), labels, metadata
+
 def plot_train_val_curves(name, train_data, val_data, title="_NLL_RE_KL", legend=['NLL', 'RE', 'KL']):
 
     assert len(train_data) == len(val_data) == 3, "train_data and val_data must contain as many elements as legend values (default: NLL, RE, KL)."
@@ -69,8 +76,12 @@ def train(model, device, train_loader, optimizer, epoch):
     RE_vals = 0.0
     KL_vals = 0.0
 
-    for batch_idx, (data, _) in enumerate(train_loader):
-        data = data.to(device)
+    for batch_idx, batch in enumerate(train_loader):
+        spectra, labels, metas = batch
+        intensity, mz = spectra
+
+        data = intensity.to(device)
+
         optimizer.zero_grad()
         recon_batch, mu, logvar = model(data)
         loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
@@ -101,8 +112,11 @@ def evaluate(test_loader, name=None, model=None, epoch=None, device="cpu"):
     total_KL = 0.0
 
     with torch.no_grad():
-        for batch_idx, (data, _) in enumerate(test_loader):
-            data = data.to(device)
+        for batch_idx, batch in enumerate(test_loader):
+            spectra, labels, metas = batch
+            intensity, mz = spectra
+
+            data = intensity.to(device)
 
             recon_batch, mu, logvar = model(data)
             loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
