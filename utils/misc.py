@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.losses import loss_function
+from utils.visualization import plot_tsne
 
 def collate_spectra(batch):
     intensities = torch.stack([torch.tensor(sample[0].intensity, dtype=torch.float32) for sample in batch])
@@ -56,8 +57,9 @@ def early_stopping(epoch, nll_val, best_nll, patience, max_patience, model, name
     :param max_patience: maximum patience
     :return: updated patience and best_nll
     """
+    saved_path = os.path.join(path, f"{name}_bestmodel.pth") if saving == 'best' else os.path.join(path, f"{name}_epoch_{epoch}.pth")
+    
     if epoch == 0 or (nll_val < best_nll):
-        saved_path = os.path.join(path, f"{name}_bestmodel.pth") if saving == 'best' else os.path.join(path, f"{name}_epoch_{epoch}.pth")
         torch.save(model.state_dict(), saved_path)
         print("saved!")
         best_nll = nll_val
@@ -83,7 +85,7 @@ def train(model, device, train_loader, optimizer, epoch):
         data = intensity.to(device)
 
         optimizer.zero_grad()
-        recon_batch, mu, logvar = model(data)
+        recon_batch, mu, logvar, bot, z = model(data)
         loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
         loss.backward()
         optimizer.step()
@@ -118,9 +120,9 @@ def evaluate(test_loader, name=None, model=None, epoch=None, device="cpu"):
 
             data = intensity.to(device)
 
-            recon_batch, mu, logvar = model(data)
+            recon_batch, mu, logvar, _, _ = model(data)
             loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
-
+            
             total_loss += loss.item()
             total_RE += rec.item()
             total_KL += kl.item()
@@ -130,8 +132,43 @@ def evaluate(test_loader, name=None, model=None, epoch=None, device="cpu"):
     avg_KL = total_KL / len(test_loader.dataset)
 
     if epoch is not None:
-        print(f"Epoch {epoch} VALIDATION → NLL: {avg_nll:.4f} | RE: {avg_RE:.4f} | KL: {avg_KL:.4f}")
+        print(f"Epoch {epoch} VALIDATION: NLL: {avg_nll:.4f} | RE: {avg_RE:.4f} | KL: {avg_KL:.4f}")
     else:
-        print(f"FINAL VALIDATION → NLL: {avg_nll:.4f} | RE: {avg_RE:.4f} | KL: {avg_KL:.4f}")
+        print(f"FINAL VALIDATION: NLL: {avg_nll:.4f} | RE: {avg_RE:.4f} | KL: {avg_KL:.4f}")
 
     return avg_nll, avg_RE, avg_KL
+
+def predict(model, test_loader, device, result_dir, name, epoch):
+    model.to(device)
+    model.eval()
+
+    all_z = []
+    all_bot = []
+    all_labels = []
+
+    total_loss = 0.0
+    total_RE = 0.0
+    total_KL = 0.0
+
+    with torch.no_grad():
+        for batch in test_loader:
+            spectra, labels, metas = batch
+            intensities, _ = spectra
+            intensities = intensities.to(device)
+
+            recon_batch, mu, logvar, bot, z = model(intensities)
+            loss, rec, kl = loss_function(recon_batch, intensities, mu, logvar, model.loss_mode)
+
+            all_z.append(z.cpu())
+            all_bot.append(bot.cpu())
+            all_labels.extend(labels)
+
+            total_loss += loss.item()
+            total_RE += rec.item()
+            total_KL += kl.item()
+        print(f"====>TEST: Average loss: {total_loss / len(test_loader.dataset):.4f}  RECON: {total_RE / len(test_loader.dataset):.4f}  KL: {total_KL / len(test_loader.dataset):.4f}")
+
+    z_all = torch.cat(all_z, dim=0)
+    bot_all = torch.cat(all_bot, dim=0)
+
+    plot_tsne(bot_all, z_all, labels=all_labels, path=result_dir, name=name, epoch=epoch)
