@@ -28,10 +28,9 @@ class VAE(nn.Module):
 
     def encode(self, x):
         bot = self.encoder_bot(x)
-        #TODO: if tsne is True, we need to add the tsne implementation here.
         # Get latent space parameters.
         mu, logvar = self.vae_enc(bot).chunk(2, dim=-1)
-        return mu, logvar
+        return mu, logvar, bot
 
     def reparameterize(self, mu, logvar):
         # Standard reparameterization trick.
@@ -41,7 +40,6 @@ class VAE(nn.Module):
 
     def decode(self, z):
         vae_dec = self.vae_decoder(z)
-        #TODO: if tsne is True, we need to add the tsne implementation here.
         h3 = self.decoder_bot(vae_dec)
         # For BCE loss, it is customary to use a sigmoid output.
         if self.loss_mode == 'bce':
@@ -51,8 +49,8 @@ class VAE(nn.Module):
 
     def forward(self, x):
         # Encode input, reparameterize, then decode.
-        mu, logvar = self.encode(x)
+        mu, logvar, bot = self.encode(x)
         z = self.reparameterize(mu, logvar)
         #TODO: if tsne is True, we need to add the tsne implementation here.
         recon = self.decode(z)
-        return recon, mu, logvar
+        return recon, mu, logvar, bot, z
