@@ -5,6 +5,9 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from scipy import interpolate
 import matplotlib.cm as cm
+import os
+from dataloader.SpectrumObject import SpectrumObject
+
 
 def spectra_comparison(spectra_list, title="Spectra Comparison"):
     """
@@ -229,3 +232,102 @@ def visualize_preprocessing_steps(spectrum, pipeline):
     plt.legend()
     plt.grid(alpha=0.3)
     plt.show()
+
+#### MLP_VAE ####
+
+def plot_tsne(bot, z, labels=None, perplexity=30, random_state=42, path='.', name='vae', epoch=0):
+    """
+    Plots and saves t-SNE of both the MLP bottleneck and VAE latent space.
+
+    Parameters:
+    - bot (torch.Tensor): Output of encoder_bot [N, D].
+    - z (torch.Tensor): Latent vectors after reparameterization [N, d].
+    - labels (list of str): Labels for color grouping (optional).
+    - perplexity (int): t-SNE perplexity parameter.
+    - random_state (int): t-SNE random state.
+    - path (str): Folder to save the plot.
+    - name (str): Prefix name for the saved file.
+    - epoch (int): Epoch number for file naming.
+    """
+    assert bot.shape[0] == z.shape[0], "bot and z must have the same number of samples"
+
+    bot_np = bot.cpu().numpy()
+    z_np = z.cpu().numpy()
+
+    tsne_bot = TSNE(n_components=2, perplexity=perplexity, random_state=random_state)
+    tsne_z = TSNE(n_components=2, perplexity=perplexity, random_state=random_state)
+
+    bot_2d = tsne_bot.fit_transform(bot_np)
+    z_2d = tsne_z.fit_transform(z_np)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    if labels is not None:
+        labels = np.array(labels)
+        for ax, data, title in zip(axes, [bot_2d, z_2d], ["MLP Bottleneck", "VAE Latent z"]):
+            for label in np.unique(labels):
+                idx = labels == label
+                ax.scatter(data[idx, 0], data[idx, 1], label=str(label), s=10)
+            ax.set_title(f"t-SNE of {title}")
+            ax.legend(fontsize=6)
+    else:
+        axes[0].scatter(bot_2d[:, 0], bot_2d[:, 1], s=10)
+        axes[0].set_title("t-SNE of MLP Bottleneck")
+        axes[1].scatter(z_2d[:, 0], z_2d[:, 1], s=10)
+        axes[1].set_title("t-SNE of VAE Latent z")
+
+    for ax in axes:
+        ax.set_xlabel("t-SNE-1")
+        ax.set_ylabel("t-SNE-2")
+
+    plt.tight_layout()
+    filename = os.path.join(path, f"{name}_tsne_epoch_{epoch}.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"✅ t-SNE plot saved to {filename}")
+
+def visualize_preprocessing(sample, pipeline, path):
+    """
+    Visualizes a random spectrum at each step of the preprocessing pipeline,
+    each step in a different subplot.
+
+    Parameters:
+    - spectrum (SpectrumObject): The original spectrum.
+    - pipeline (SequentialPreprocessor): The preprocessing pipeline.
+    
+    Returns:
+    - None (Displays plots)
+    """
+
+    spectrum, metadata = sample
+
+    steps = [("Raw", spectrum)]
+
+    # Apply preprocessing step by step and save intermediate results
+    for step in pipeline.preprocessors:
+        spectrum = step(spectrum)
+        steps.append((step.__class__.__name__, spectrum))
+
+    # Plot each step in its own subplot
+    num_steps = len(steps)
+    fig, axes = plt.subplots(num_steps, 1, figsize=(10, 3 * num_steps), sharex=True)
+
+    if num_steps == 1:
+        axes = [axes]  # Make iterable if only one subplot
+
+    for ax, (name, spec) in zip(axes, steps):
+        mz, intensity = spec.mz, spec.intensity
+        ax.plot(mz, intensity)
+        ax.set_title(f"{name} Spectrum")
+        ax.set_ylabel("Intensity")
+        ax.grid(alpha=0.3)
+
+    axes[-1].set_xlabel("m/z")
+    fig.suptitle(f"Preprocessing Steps for {metadata}", fontsize=14, y=1.02)
+    plt.tight_layout()
+
+    metadata = metadata.replace("/", "_")
+    filename = os.path.join(path, f"preproc_{metadata}.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"✅ Preprocessing plot saved to {filename}")

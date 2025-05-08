@@ -1,8 +1,10 @@
+import random
 from torch.utils.data import Dataset
 from dataloader.SpectrumObject import SpectrumObject
+from utils.visualization import visualize_preprocessing
 
 class MaldiDataset(Dataset):
-    def __init__(self, spectra_dict, preprocess_pipeline=None):
+    def __init__(self, spectra_dict, preprocess_pipeline=None, visualize=False, path=None):
         self.samples = []
         self.preprocess_pipeline = preprocess_pipeline
 
@@ -22,6 +24,15 @@ class MaldiDataset(Dataset):
                                 }
                             })
 
+        if visualize and len(self.samples) > 0 and path:
+            random_sample = random.choice(self.samples)
+            fid_path = random_sample['fid']
+            acqu_path = fid_path.replace('fid', 'acqu')
+            spectrum = SpectrumObject.from_bruker(acqu_path, fid_path)
+            visualize_preprocessing((spectrum, random_sample['meta']['study']), preprocess_pipeline, path)
+        elif visualize and not path:
+            raise ValueError("Path must be provided for visualization.")
+        
     def __len__(self):
         return len(self.samples)
 
