@@ -36,6 +36,24 @@ def preprocess_spectra(dataset, pipeline, visualize=False):
 
     return processed_spectra
 
+class StdThresholder:
+    """
+    Zeros out intensity values below a threshold defined as a multiple of the standard deviation.
+
+    Parameters
+    ----------
+    factor : float
+        Multiplier for the standard deviation. Intensities below (factor * std) are set to zero.
+    """
+    def __init__(self, factor=2.0):
+        self.factor = factor
+
+    def __call__(self, SpectrumObj):
+        threshold = self.factor * np.std(SpectrumObj.intensity)
+        new_intensity = np.where(SpectrumObj.intensity >= threshold, SpectrumObj.intensity, 0.0)
+        return SpectrumObject(intensity=new_intensity, mz=SpectrumObj.mz)
+
+
 class Binner:
 
     """Pre-processing function for binning spectra in equal-width bins.
