@@ -1,0 +1,125 @@
+import os
+import sys
+import torch
+import time
+import torch.optim as optim
+from torch.utils.data import DataLoader
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from dataloader.MaldiMaranon_Manager import MaldiMaranonManager
+from dataloader.MaldiDataset import MaldiDataset
+from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer, StdThresholder
+from models.bottlenecks import MLP
+from models.AE_VAE import VAE
+from utils.misc import plot_train_val_curves, early_stopping, train, evaluate, collate_spectra, predict
+
+def main():
+
+    # ------------------------------
+    # 1) SETUP: data, hyperparams
+    # ------------------------------
+
+    data_name = 'MALDIS'
+    name = 'mlp_vae'
+    result_dir = f'results/{data_name}_{name}_{time.strftime("%Y%m%d_%H%M%S")}/'
+    os.makedirs(result_dir, exist_ok=True)
+
+    # Set device and hyperparameters.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    epochs = 10
+    learning_rate = 1e-3
+    loss_mode = 'mse'  # Change to 'mse' or 'gaussian' if desired.
+
+    # MALDIMARANON dataset
+    # Load full training dataset
+    dataset_path = f"/export/data_ml4ds/bacteria_id/MaldiMaranonDB"
+
+    binning_step = 9
+    preprocess_pipeline = SequentialPreprocessor(VarStabilizer(method="sqrt"),
+                                                Smoother(halfwindow=10),
+                                                BaselineCorrecter(method="SNIP", snip_n_iter=20),
+                                                StdThresholder(factor=1.0),
+                                                Trimmer(),
+                                                Binner(step=binning_step),
+                                                Normalizer(sum=1))
+
+    # Initialize the DRIAMS manager
+    pickle_path = os.path.join(os.path.dirname(__file__), 'maldi_manager.pkl')
+    manager = MaldiMaranonManager(dataset_path, presaved=True, pickel_path=pickle_path)
+
+    stats_df = manager.stats
+
+    test_data = manager.query_spectra_dict(years='2024',  genus='Escherichia', species='Coli')
+    val_data = manager.query_spectra_dict(years='2023', genus='Escherichia', species='Coli')
+    training_years = ['2022', '2021', '2020', '2019', '2018']
+    train_data = manager.query_spectra_dict(years=training_years, genus='Escherichia', species='Coli')
+
+    # Create datasets
+    train_dataset = MaldiDataset(train_data, preprocess_pipeline=preprocess_pipeline, visualize=True, path=result_dir)
+    val_dataset   = MaldiDataset(val_data, preprocess_pipeline=preprocess_pipeline)  
+    test_dataset  = MaldiDataset(test_data, preprocess_pipeline=preprocess_pipeline)
+
+    # DataLoader for training, validation, and test sets.
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, collate_fn=collate_spectra)
+    val_loader   = DataLoader(val_dataset,   batch_size=64, shuffle=False, collate_fn=collate_spectra)
+    test_loader  = DataLoader(test_dataset,  batch_size=64, shuffle=False, collate_fn=collate_spectra)
+
+
+    # ------------------------------
+    # 2) DEFINE MODELS
+    # ------------------------------
+
+    # Define the encoder and decoder networks.
+    bottleneck = MLP() # This can be replaced with any other bottleneck architecture.
+    encoder_bot = bottleneck.encoder
+    decoder_bot = bottleneck.decoder
+
+    # Instantiate the model, optimizer.
+    model = VAE(encoder_bot, decoder_bot, loss_mode=loss_mode).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # ------------------------------
+    # 3) TRAIN
+    # ------------------------------
+
+    nll_curve_train = []
+    nll_curve_val = []
+    RE_curve_train = []
+    RE_curve_val = []
+    KL_curve_train = []
+    KL_curve_val = []
+
+    max_patience = 5
+    patience = 0
+    best_nll = float('inf')
+
+    for epoch in range(1, epochs + 1):
+        nll, re, kl = train(model, device, train_loader, optimizer, epoch)
+        nll_curve_train.append(nll)
+        RE_curve_train.append(re)
+        KL_curve_train.append(kl)
+
+        # ------------------------------
+        # 4) VALIDATE
+        # ------------------------------
+
+        nll_val, re_val, kl_val = evaluate(val_loader, model=model, epoch=epoch, device=device)
+        nll_curve_val.append(nll_val)
+        RE_curve_val.append(re_val)
+        KL_curve_val.append(kl_val)
+
+        # Early stopping check and save best model
+        early_stopped, best_nll, patience, saved_path = early_stopping(epoch, nll_val, best_nll, patience, max_patience, model, name, result_dir, saving='epochwise')
+
+        if early_stopped:
+            print(f"Early stopping at epoch {epoch} with a loss of {best_nll}.")
+            print(f"Best model saved at: {saved_path}")
+            break
+
+    train_data = [nll_curve_train, RE_curve_train, KL_curve_train]
+    val_data = [nll_curve_val, RE_curve_val, KL_curve_val]
+
+    plot_train_val_curves(result_dir + name, train_data, val_data)
+
+if __name__ == "__main__":
+    main()
