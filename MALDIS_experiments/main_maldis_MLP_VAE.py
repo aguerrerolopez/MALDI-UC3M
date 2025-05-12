@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from dataloader.MaldiMaranon_Manager import MaldiMaranonManager
 from dataloader.MaldiDataset import MaldiDataset
-from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer, StdThresholder
+from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer, StdThresholder, MinMaxScaler
 from models.bottlenecks import MLP
 from models.AE_VAE import VAE
 from utils.misc import plot_train_val_curves, early_stopping, train, evaluate, collate_spectra, predict
@@ -21,12 +21,12 @@ def main():
 
     data_name = 'MALDIS'
     name = 'mlp_vae'
-    result_dir = f'results/{data_name}_{name}_{time.strftime("%Y%m%d_%H%M%S")}/'
+    result_dir = f'/export/usuarios_ml4ds/lschmidt/GITHUB/MALDI-UC3M/results/{data_name}_{name}_{time.strftime("%Y%m%d_%H%M%S")}/'
     os.makedirs(result_dir, exist_ok=True)
 
     # Set device and hyperparameters.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    epochs = 10
+    epochs = 200
     learning_rate = 1e-3
     loss_mode = 'mse'  # Change to 'mse' or 'gaussian' if desired.
 
@@ -41,7 +41,8 @@ def main():
                                                 StdThresholder(factor=1.0),
                                                 Trimmer(),
                                                 Binner(step=binning_step),
-                                                Normalizer(sum=1))
+                                                MinMaxScaler())
+                                                # Normalizer(sum=1))
 
     # Initialize the DRIAMS manager
     pickle_path = os.path.join(os.path.dirname(__file__), 'maldi_manager.pkl')
@@ -89,7 +90,7 @@ def main():
     KL_curve_train = []
     KL_curve_val = []
 
-    max_patience = 5
+    max_patience = 10
     patience = 0
     best_nll = float('inf')
 
@@ -109,7 +110,7 @@ def main():
         KL_curve_val.append(kl_val)
 
         # Early stopping check and save best model
-        early_stopped, best_nll, patience, saved_path = early_stopping(epoch, nll_val, best_nll, patience, max_patience, model, name, result_dir, saving='epochwise')
+        early_stopped, best_nll, patience, saved_path = early_stopping(epoch, nll_val, best_nll, patience, max_patience, model, name, result_dir, saving='best')
 
         if early_stopped:
             print(f"Early stopping at epoch {epoch} with a loss of {best_nll}.")
