@@ -36,6 +36,29 @@ def preprocess_spectra(dataset, pipeline, visualize=False):
 
     return processed_spectra
 
+class MinMaxScaler:
+    """Pre-processing function for scaling the intensity of a spectrum.
+
+    Parameters
+    ----------
+    min : int, optional
+        minimum value of the scaled spectrum, by default 0
+    max : int, optional
+        maximum value of the scaled spectrum, by default 1
+    """
+
+    def __init__(self, min=0, max=1):
+        self.min = min
+        self.max = max
+
+    def __call__(self, SpectrumObj):
+        s = SpectrumObject(
+            intensity=self.min + (SpectrumObj.intensity - SpectrumObj.intensity.min()) * (
+                self.max - self.min) / (SpectrumObj.intensity.max() - SpectrumObj.intensity.min()),
+            mz=SpectrumObj.mz,
+        )
+        return s
+
 class StdThresholder:
     """
     Zeros out intensity values below a threshold defined as a multiple of the standard deviation.
