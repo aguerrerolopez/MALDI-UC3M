@@ -112,15 +112,15 @@ class MaldiMaranonManager:
                     stats[species_name][(year, 'Total')] = total_count
 
         # Crear DataFrame
-        stats_df = pd.DataFrame.from_dict(stats, orient='index')
+        self.stats = pd.DataFrame.from_dict(stats, orient='index')
 
         # Ordenar columnas: primero por año y luego Unique/Total
-        stats_df = stats_df.sort_index(axis=1, level=[0, 1])
+        self.stats = self.stats.sort_index(axis=1, level=[0, 1])
 
         # Añadir nombre del índice
-        stats_df.index.name = 'Species'
+        self.stats.index.name = 'Species'
 
-        return stats_df
+        return self.stats
     
     def save_to_pickle(self, file_path):
         """
@@ -190,5 +190,11 @@ class MaldiMaranonManager:
                         filtered_dict[year][g][s][study] = fids  # keep full list
 
         return filtered_dict
+    
+    def get_top_species(self, top_n=5):
+        total_col = self.stats.columns.get_level_values(1) == "Total"
+        totals = self.stats.loc[:, total_col].sum(axis=1)
+        top_species = totals.sort_values(ascending=False).head(top_n).index.tolist()
+        return [species.split('_') for species in top_species]  # [['Escherichia', 'Coli'], ...]
 
 
