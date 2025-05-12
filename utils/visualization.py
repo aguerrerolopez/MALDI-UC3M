@@ -286,44 +286,51 @@ def plot_tsne(bot, z, labels=None, perplexity=30, random_state=42, path='.', nam
     plt.close()
     print(f"✅ t-SNE plot saved to {filename}")
 
-def visualize_preprocessing(sample, pipeline, path):
+def visualize_preprocessing(sample, pipeline, path, histogram=True):
     """
-    Visualizes a random spectrum at each step of the preprocessing pipeline,
-    each step in a different subplot.
+    Visualizes a spectrum at each step of the preprocessing pipeline with optional histograms.
 
     Parameters:
     - spectrum (SpectrumObject): The original spectrum.
     - pipeline (SequentialPreprocessor): The preprocessing pipeline.
-    
-    Returns:
-    - None (Displays plots)
+    - histogram (bool): Whether to plot histograms of intensities after each step.
     """
-
     spectrum, metadata = sample
+    steps = [("Raw Spectrum", spectrum)]
 
-    steps = [("Raw", spectrum)]
-
-    # Apply preprocessing step by step and save intermediate results
+    # Apply preprocessing steps and collect results
     for step in pipeline.preprocessors:
         spectrum = step(spectrum)
         steps.append((step.__class__.__name__, spectrum))
 
-    # Plot each step in its own subplot
-    num_steps = len(steps)
-    fig, axes = plt.subplots(num_steps, 1, figsize=(10, 3 * num_steps), sharex=True)
+    n_steps = len(steps)
+    ncols = 2 if histogram else 1
+    figsize = (14, 3.5 * n_steps) if histogram else (8, 3.5 * n_steps)
 
-    if num_steps == 1:
-        axes = [axes]  # Make iterable if only one subplot
+    fig, axes = plt.subplots(n_steps, ncols, figsize=figsize, squeeze=False)
 
-    for ax, (name, spec) in zip(axes, steps):
-        mz, intensity = spec.mz, spec.intensity
-        ax.plot(mz, intensity)
-        ax.set_title(f"{name} Spectrum")
-        ax.set_ylabel("Intensity")
-        ax.grid(alpha=0.3)
+    for i, (title, spec) in enumerate(steps):
+        mz = spec.mz
+        intensity = spec.intensity
 
-    axes[-1].set_xlabel("m/z")
-    fig.suptitle(f"Preprocessing Steps for {metadata}", fontsize=14, y=1.02)
+        # Plot spectrum
+        axes[i, 0].plot(mz, intensity, linewidth=1.2)
+        axes[i, 0].set_title(f"{title}")
+        axes[i, 0].set_xlabel("m/z")
+        axes[i, 0].set_ylabel("Intensity")
+        axes[i, 0].grid(alpha=0.3)
+
+        # Plot histogram of intensities (non-zero only)
+        if histogram:
+            nonzero = intensity[intensity > 0]
+            zero_count = np.sum(intensity == 0)
+
+            axes[i, 1].hist(nonzero, bins=50, color='tab:blue', alpha=0.8)
+            axes[i, 1].set_title(f"Histogram after {title} (zeros: {zero_count})")
+            axes[i, 1].set_xlabel("Intensity (non-zero)")
+            axes[i, 1].set_ylabel("Frequency")
+            axes[i, 1].grid(alpha=0.3)
+
     plt.tight_layout()
 
     metadata = metadata.replace("/", "_")
