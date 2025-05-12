@@ -1,12 +1,14 @@
 import os
 import sys
 import torch
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.losses import loss_function
 from utils.visualization import plot_tsne
+from utils.visualization import plot_samples
 
 def collate_spectra(batch):
     intensities = torch.stack([torch.tensor(sample[0].intensity, dtype=torch.float32) for sample in batch])
@@ -118,7 +120,7 @@ def evaluate(test_loader, name=None, model=None, epoch=None, device="cpu"):
     with torch.no_grad():
         for batch_idx, batch in enumerate(test_loader):
             spectra, labels, metas = batch
-            intensity, mz = spectra
+            intensity, _ = spectra
 
             data = intensity.to(device)
 
@@ -140,20 +142,25 @@ def evaluate(test_loader, name=None, model=None, epoch=None, device="cpu"):
 
     return avg_nll, avg_RE, avg_KL
 
-def predict(model, test_loader, device, result_dir, name, epoch):
+def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5):
     model.to(device)
     model.eval()
+
+    os.makedirs(result_dir, exist_ok=True)
+    plotted = 0
+    selected_indices = random.sample(range(len(test_loader.dataset)), min(num_samples_to_plot, len(test_loader.dataset)))
 
     all_z = []
     all_bot = []
     all_labels = []
+    samples = []
 
     total_loss = 0.0
     total_RE = 0.0
     total_KL = 0.0
 
     with torch.no_grad():
-        for batch in test_loader:
+        for batch_idx, batch in enumerate(test_loader):
             spectra, labels, metas = batch
             intensities, _ = spectra
             intensities = intensities.to(device)
@@ -165,6 +172,13 @@ def predict(model, test_loader, device, result_dir, name, epoch):
             all_bot.append(bot.cpu())
             all_labels.extend(labels)
 
+            # Plot selected samples
+            for i in range(intensities.size(0)):
+                global_idx = batch_idx * test_loader.batch_size + i
+                if global_idx in selected_indices and plotted < num_samples_to_plot:
+                    samples.append((intensities[i], recon_batch[i], global_idx))
+                    plotted += 1
+
             total_loss += loss.item()
             total_RE += rec.item()
             total_KL += kl.item()
@@ -173,4 +187,5 @@ def predict(model, test_loader, device, result_dir, name, epoch):
     z_all = torch.cat(all_z, dim=0)
     bot_all = torch.cat(all_bot, dim=0)
 
-    plot_tsne(bot_all, z_all, labels=all_labels, path=result_dir, name=name, epoch=epoch)
+    plot_tsne(bot_all, z_all, labels=all_labels, path=result_dir, name=name)
+    plot_samples(samples, result_dir, name)
