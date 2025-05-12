@@ -7,6 +7,7 @@ from scipy import interpolate
 import matplotlib.cm as cm
 import os
 from dataloader.SpectrumObject import SpectrumObject
+import matplotlib.pyplot as plt
 
 
 def spectra_comparison(spectra_list, title="Spectra Comparison"):
@@ -338,3 +339,33 @@ def visualize_preprocessing(sample, pipeline, path, histogram=True):
     plt.savefig(filename)
     plt.close()
     print(f"✅ Preprocessing plot saved to {filename}")
+
+def plot_samples(samples, path, name="reconstruction"):
+    """
+    Plots and saves comparisons between original and reconstructed spectra for multiple samples.
+
+    Parameters:
+    - samples (list of tuples): Each tuple is (original_tensor, reconstructed_tensor, index).
+    - path (str): Directory to save the plot.
+    - name (str): Base filename.
+    """
+    num_samples = len(samples)
+    fig, axes = plt.subplots(num_samples, 1, figsize=(10, 4 * num_samples), sharex=True)
+
+    # If only one sample, axes is not iterable
+    if num_samples == 1:
+        axes = [axes]
+
+    for ax, (original, reconstructed, sample_idx) in zip(axes, samples):
+        ax.plot(original.cpu().numpy(), label="Original", linestyle="dashed")
+        ax.plot(reconstructed.cpu().numpy(), label="Reconstructed")
+        ax.set_title(f"Sample {sample_idx}")
+        ax.set_xlabel("m/z")
+        ax.set_ylabel("Intensity")
+        ax.legend()
+        ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    os.makedirs(path, exist_ok=True)
+    plt.savefig(os.path.join(path, f"{name}_samples.pdf"), bbox_inches='tight')
+    plt.close()
