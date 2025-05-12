@@ -85,9 +85,11 @@ def train(model, device, train_loader, optimizer, epoch):
         data = intensity.to(device)
 
         optimizer.zero_grad()
-        recon_batch, mu, logvar, bot, z = model(data)
+        recon_batch, mu, logvar, _, _ = model(data)
+
         loss, rec, kl = loss_function(recon_batch, data, mu, logvar, model.loss_mode)
         loss.backward()
+
         optimizer.step()
 
         train_loss += loss.item()
