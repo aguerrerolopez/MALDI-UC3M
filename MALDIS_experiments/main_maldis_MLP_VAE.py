@@ -48,9 +48,6 @@ def main():
     pickle_path = os.path.join(os.path.dirname(__file__), 'maldi_manager.pkl')
     manager = MaldiMaranonManager(dataset_path, presaved=True, pickel_path=pickle_path)
 
-    stats_df = manager.stats
-
-    test_data = manager.query_spectra_dict(years='2024',  genus='Escherichia', species='Coli')
     val_data = manager.query_spectra_dict(years='2023', genus='Escherichia', species='Coli')
     training_years = ['2022', '2021', '2020', '2019', '2018']
     train_data = manager.query_spectra_dict(years=training_years, genus='Escherichia', species='Coli')
@@ -58,13 +55,10 @@ def main():
     # Create datasets
     train_dataset = MaldiDataset(train_data, preprocess_pipeline=preprocess_pipeline, visualize=True, path=result_dir)
     val_dataset   = MaldiDataset(val_data, preprocess_pipeline=preprocess_pipeline)  
-    test_dataset  = MaldiDataset(test_data, preprocess_pipeline=preprocess_pipeline)
 
     # DataLoader for training, validation, and test sets.
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, collate_fn=collate_spectra)
     val_loader   = DataLoader(val_dataset,   batch_size=64, shuffle=False, collate_fn=collate_spectra)
-    test_loader  = DataLoader(test_dataset,  batch_size=64, shuffle=False, collate_fn=collate_spectra)
-
 
     # ------------------------------
     # 2) DEFINE MODELS
@@ -122,5 +116,62 @@ def main():
 
     plot_train_val_curves(result_dir + name, train_data, val_data)
 
+    return saved_path
+
+def inference(model, test_loader, device, path, name):
+
+    predict(model, test_loader, device, path, name)
+
 if __name__ == "__main__":
-    main()
+
+    training = False
+
+    if training:
+        saved_model = main()
+
+    # INFERENCE:
+    else:
+
+        # MALDIMARANON dataset
+        dataset_path = f"/export/data_ml4ds/bacteria_id/MaldiMaranonDB"
+
+        binning_step = 9
+        preprocess_pipeline = SequentialPreprocessor(VarStabilizer(method="sqrt"),
+                                                    Smoother(halfwindow=10),
+                                                    BaselineCorrecter(method="SNIP", snip_n_iter=20),
+                                                    StdThresholder(factor=1.0),
+                                                    Trimmer(),
+                                                    Binner(step=binning_step),
+                                                    MinMaxScaler())
+                                                    # Normalizer(sum=1))
+
+        # Initialize the DRIAMS manager
+        pickle_path = os.path.join(os.path.dirname(__file__), 'maldi_manager.pkl')
+        manager = MaldiMaranonManager(dataset_path, presaved=True, pickel_path=pickle_path)
+        test_data = manager.query_spectra_dict(years='2024',  genus='Escherichia', species='Coli')
+        test_dataset  = MaldiDataset(test_data, preprocess_pipeline=preprocess_pipeline)
+        test_loader  = DataLoader(test_dataset,  batch_size=64, shuffle=False, collate_fn=collate_spectra)
+        
+        # ------------------------------
+        # 2) DEFINE MODELS
+        # ------------------------------
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        loss_mode = 'mse'
+
+        bottleneck = MLP()
+        encoder_bot = bottleneck.encoder
+        decoder_bot = bottleneck.decoder
+        model = VAE(encoder_bot, decoder_bot, loss_mode=loss_mode).to(device)
+
+        # saved_model = main()
+        saved_model = '/export/usuarios_ml4ds/lschmidt/GITHUB/MALDI-UC3M/results/MALDIS_mlp_vae_20250509_170929/mlp_vae_bestmodel'
+        saved_model = saved_model + '.pth'
+
+        # Load the model
+        model.load_state_dict(torch.load(saved_model))
+
+        path = path = os.path.dirname(saved_model)
+        name = 'Inference_mlp_vae'
+        inference(model, test_loader, device, path, name)
+        
