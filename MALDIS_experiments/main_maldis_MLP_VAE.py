@@ -7,11 +7,11 @@ from torch.utils.data import DataLoader
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from dataloader.MaldiMaranon_Manager import MaldiMaranonManager
-from dataloader.MaldiDataset import MaldiDataset
+from dataloader.MaldiDataset import MaldiDataset, SynthDataset
 from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer, StdThresholder, MinMaxScaler
 from models.bottlenecks import MLP
 from models.AE_VAE import VAE
-from utils.misc import plot_train_val_curves, early_stopping, train, evaluate, collate_spectra, predict
+from utils.misc import plot_train_val_curves, early_stopping, train, evaluate, collate_spectra, predict, test_synth_data
 
 def main():
 
@@ -34,7 +34,7 @@ def main():
     # Load full training dataset
     dataset_path = f"/export/data_ml4ds/bacteria_id/MaldiMaranonDB"
 
-    binning_step = 9
+    binning_step = 3
     preprocess_pipeline = SequentialPreprocessor(VarStabilizer(method="sqrt"),
                                                 Smoother(halfwindow=10),
                                                 BaselineCorrecter(method="SNIP", snip_n_iter=20),
@@ -65,7 +65,7 @@ def main():
     # ------------------------------
 
     # Define the encoder and decoder networks.
-    bottleneck = MLP() # This can be replaced with any other bottleneck architecture.
+    bottleneck = MLP(input_dim=6000) # This can be replaced with any other bottleneck architecture.
     encoder_bot = bottleneck.encoder
     decoder_bot = bottleneck.decoder
 
@@ -120,58 +120,59 @@ def main():
 
 def inference(model, test_loader, device, path, name):
 
-    predict(model, test_loader, device, path, name)
+    return predict(model, test_loader, device, path, name, save_synth=True)
 
 if __name__ == "__main__":
 
-    training = False
+    training = True
 
-    if training:
-        saved_model = main()
+    # MALDIMARANON dataset
+    dataset_path = f"/export/data_ml4ds/bacteria_id/MaldiMaranonDB"
 
-    # INFERENCE:
-    else:
+    binning_step = 3
+    preprocess_pipeline = SequentialPreprocessor(VarStabilizer(method="sqrt"),
+                                                Smoother(halfwindow=10),
+                                                BaselineCorrecter(method="SNIP", snip_n_iter=20),
+                                                StdThresholder(factor=1.0),
+                                                Trimmer(),
+                                                Binner(step=binning_step),
+                                                MinMaxScaler())
+                                                # Normalizer(sum=1))
 
-        # MALDIMARANON dataset
-        dataset_path = f"/export/data_ml4ds/bacteria_id/MaldiMaranonDB"
+    # Initialize the DRIAMS manager
+    pickle_path = os.path.join(os.path.dirname(__file__), 'maldi_manager.pkl')
+    manager = MaldiMaranonManager(dataset_path, presaved=True, pickel_path=pickle_path)
+    test_data = manager.query_spectra_dict(years='2024',  genus='Escherichia', species='Coli')
+    test_dataset  = MaldiDataset(test_data, preprocess_pipeline=preprocess_pipeline)
+    test_loader  = DataLoader(test_dataset,  batch_size=64, shuffle=False, collate_fn=collate_spectra)
 
-        binning_step = 9
-        preprocess_pipeline = SequentialPreprocessor(VarStabilizer(method="sqrt"),
-                                                    Smoother(halfwindow=10),
-                                                    BaselineCorrecter(method="SNIP", snip_n_iter=20),
-                                                    StdThresholder(factor=1.0),
-                                                    Trimmer(),
-                                                    Binner(step=binning_step),
-                                                    MinMaxScaler())
-                                                    # Normalizer(sum=1))
+    print(f"Length of the test dataset: {len(test_dataset)}")
+    
+    # ------------------------------
+    # 2) DEFINE MODELS
+    # ------------------------------
 
-        # Initialize the DRIAMS manager
-        pickle_path = os.path.join(os.path.dirname(__file__), 'maldi_manager.pkl')
-        manager = MaldiMaranonManager(dataset_path, presaved=True, pickel_path=pickle_path)
-        test_data = manager.query_spectra_dict(years='2024',  genus='Escherichia', species='Coli')
-        test_dataset  = MaldiDataset(test_data, preprocess_pipeline=preprocess_pipeline)
-        test_loader  = DataLoader(test_dataset,  batch_size=64, shuffle=False, collate_fn=collate_spectra)
-        
-        # ------------------------------
-        # 2) DEFINE MODELS
-        # ------------------------------
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    loss_mode = 'mse'
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        loss_mode = 'mse'
+    bottleneck = MLP(input_dim=6000)
+    encoder_bot = bottleneck.encoder
+    decoder_bot = bottleneck.decoder
+    model = VAE(encoder_bot, decoder_bot, loss_mode=loss_mode).to(device)
 
-        bottleneck = MLP()
-        encoder_bot = bottleneck.encoder
-        decoder_bot = bottleneck.decoder
-        model = VAE(encoder_bot, decoder_bot, loss_mode=loss_mode).to(device)
 
-        # saved_model = main()
-        saved_model = '/export/usuarios_ml4ds/lschmidt/GITHUB/MALDI-UC3M/results/MALDIS_mlp_vae_20250509_170929/mlp_vae_bestmodel'
-        saved_model = saved_model + '.pth'
+    saved_model = main() if training else '/export/usuarios_ml4ds/lschmidt/GITHUB/MALDI-UC3M/results/MALDIS_mlp_vae_20250514_172756/mlp_vae_bestmodel.pth'
+    model.load_state_dict(torch.load(saved_model))
 
-        # Load the model
-        model.load_state_dict(torch.load(saved_model))
+    path = path = os.path.dirname(saved_model)
+    name = 'Inference_mlp_vae'
+    synth_data = inference(model, test_loader, device, path, name)    
 
-        path = path = os.path.dirname(saved_model)
-        name = 'Inference_mlp_vae'
-        inference(model, test_loader, device, path, name)
-        
+    synth_dataset = SynthDataset(synth_data)
+    print(f"Length of the synthesized dataset: {len(synth_dataset)}")
+    
+    # Test the synthesized dataset
+    # rf_model_path = '/export/usuarios_ml4ds/lschmidt/GITHUB/MALDI-UC3M/results/MALDIS_rf_20250514_131530/rf_stdthr_model.pkl'
+    # test_synth_data(synth_dataset, rf_model_path)
+
+
