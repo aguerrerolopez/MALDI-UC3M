@@ -4,11 +4,15 @@ import torch
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+import joblib
+
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.losses import loss_function
-from utils.visualization import plot_tsne
-from utils.visualization import plot_samples
+from utils.visualization import plot_tsne, plot_samples, get_mean_spectra
+from dataloader.SpectrumObject import SpectrumObject
+
 
 def collate_spectra(batch):
     intensities = torch.stack([torch.tensor(sample[0].intensity, dtype=torch.float32) for sample in batch])
@@ -142,7 +146,7 @@ def evaluate(test_loader, name=None, model=None, epoch=None, device="cpu"):
 
     return avg_nll, avg_RE, avg_KL
 
-def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5):
+def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5, save_synth=False):
     model.to(device)
     model.eval()
 
@@ -150,10 +154,10 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5)
     plotted = 0
     selected_indices = random.sample(range(len(test_loader.dataset)), min(num_samples_to_plot, len(test_loader.dataset)))
 
-    all_z = []
-    all_bot = []
-    all_labels = []
     samples = []
+    original= []
+    reconstructed = []
+    synth_data = [] if save_synth else None
 
     total_loss = 0.0
     total_RE = 0.0
@@ -162,30 +166,96 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5)
     with torch.no_grad():
         for batch_idx, batch in enumerate(test_loader):
             spectra, labels, metas = batch
-            intensities, _ = spectra
+            intensities, mzs = spectra
             intensities = intensities.to(device)
 
             recon_batch, mu, logvar, bot, z = model(intensities)
             loss, rec, kl = loss_function(recon_batch, intensities, mu, logvar, model.loss_mode)
 
-            all_z.append(z.cpu())
-            all_bot.append(bot.cpu())
-            all_labels.extend(labels)
-
-            # Plot selected samples
             for i in range(intensities.size(0)):
+                int = intensities[i].cpu().numpy()
+                recon = recon_batch[i].cpu().numpy()
+                mz = mzs[i].cpu().numpy()
+                label = labels[i] + '_synth'
+                meta = metas[i]
+
                 global_idx = batch_idx * test_loader.batch_size + i
+
+                if save_synth:
+                    synthetic_spectrum = SpectrumObject(mz, recon)
+                    synth_data.append((synthetic_spectrum, label, meta))
+
+
+                # Plot only the selected samples
                 if global_idx in selected_indices and plotted < num_samples_to_plot:
-                    samples.append((intensities[i], recon_batch[i], global_idx))
+                    samples.append((int, recon, global_idx))
                     plotted += 1
+
+                original.append(int)
+                reconstructed.append(recon)
 
             total_loss += loss.item()
             total_RE += rec.item()
             total_KL += kl.item()
         print(f"====>TEST: Average loss: {total_loss / len(test_loader.dataset):.4f}  RECON: {total_RE / len(test_loader.dataset):.4f}  KL: {total_KL / len(test_loader.dataset):.4f}")
-
-    z_all = torch.cat(all_z, dim=0)
-    bot_all = torch.cat(all_bot, dim=0)
-
-    plot_tsne(bot_all, z_all, labels=all_labels, path=result_dir, name=name)
+    
+    # Plotting
     plot_samples(samples, result_dir, name)
+
+    labels = ['Original', 'Reconstructed']
+    spectra = [original, reconstructed]
+    get_mean_spectra(spectra, labels, result_dir, name)
+
+
+    return synth_data if save_synth else None
+
+
+def test_synth_data(synth_dataset, rf_model_path):
+    """
+    Test a pre-trained Random Forest model on the synthetic dataset.
+    Args:
+        synth_dataset: Dataset containing (SpectrumObject, label, meta) tuples, where label ends with '_synth'.
+        rf_model_path: Path to the saved Random Forest model (torch.save'd .pth file).
+    Returns:
+        acc: Accuracy score.
+        report: Full classification report (as string).
+    """
+
+    results_dir = os.path.dirname(rf_model_path)
+
+    # Load trained RF model
+    rf = joblib.load(rf_model_path)
+
+    # Prepare test data
+    X_test = []
+    y_true = []
+
+    for spectrum, label, _ in synth_dataset:
+        X_test.append(spectrum.intensity)
+        # Remove "_synth" from label to compare with RF trained on true labels
+        y_true.append(label.replace('_synth', ''))
+
+    # Convert to numpy
+    X_test = np.stack(X_test)
+
+    # Predict
+    y_pred = rf.predict(X_test)
+
+    # Evaluate
+    acc = accuracy_score(y_true, y_pred)
+    print(f"RF Accuracy on synthetic data: {acc:.4f}")
+
+    report = classification_report(y_true, y_pred)
+    print("Classification Report:\n", report)
+    with open(os.path.join(results_dir, "classification_report.txt"), "w") as f:
+        f.write(report)
+
+    _, ax2 = plt.subplots(figsize=(8, 6))
+    cnf = confusion_matrix(y_true, y_pred, labels=rf.classes_)
+    ConfusionMatrixDisplay(cnf, display_labels=rf.classes_).plot(ax=ax2, xticks_rotation=45)
+    plt.title("Confusion Matrix - Synthetic Data")
+    plt.tight_layout()
+    plt.savefig(os.path.join(results_dir, "confusion_matrix_synth.png"))
+    print("Confusion Matrix:\n", confusion_matrix)
+
+    return
