@@ -48,3 +48,20 @@ class MaldiDataset(Dataset):
 
         # Return SpectrumObject and label
         return SpectrumObject(mz=spectrum.mz, intensity=spectrum.intensity), entry['label'], entry['meta']
+
+
+class SynthDataset(Dataset):
+    def __init__(self, samples):
+        self.samples = samples
+
+    def __len__(self):
+        return len(self.samples)
+    
+    def __getitem__(self, idx):
+
+        entry = self.samples[idx]
+        spectrum = entry[0]
+        label = entry[1]
+        meta = entry[2]
+
+        return spectrum, label, meta
