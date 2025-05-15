@@ -1,13 +1,11 @@
-import matplotlib.pyplot as plt
-import numpy as np
+import os
 import random
+import numpy as np
+import matplotlib.pyplot as plt
+
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from scipy import interpolate
-import matplotlib.cm as cm
-import os
-from dataloader.SpectrumObject import SpectrumObject
-import matplotlib.pyplot as plt
 
 
 def spectra_comparison(spectra_list, title="Spectra Comparison"):
@@ -302,7 +300,7 @@ def visualize_preprocessing(sample, pipeline, path, histogram=True):
     # Apply preprocessing steps and collect results
     for step in pipeline.preprocessors:
         spectrum = step(spectrum)
-        steps.append((step.__class__.__name__, spectrum))
+        steps.append((step.__class__.__name__, spectrum)) 
 
     n_steps = len(steps)
     ncols = 2 if histogram else 1
@@ -357,8 +355,8 @@ def plot_samples(samples, path, name="reconstruction"):
         axes = [axes]
 
     for ax, (original, reconstructed, sample_idx) in zip(axes, samples):
-        ax.plot(original.cpu().numpy(), label="Original", linestyle="dashed")
-        ax.plot(reconstructed.cpu().numpy(), label="Reconstructed")
+        ax.plot(original, label="Original")
+        ax.plot(reconstructed, label="Reconstructed", alpha=0.6)
         ax.set_title(f"Sample {sample_idx}")
         ax.set_xlabel("m/z")
         ax.set_ylabel("Intensity")
@@ -369,3 +367,25 @@ def plot_samples(samples, path, name="reconstruction"):
     os.makedirs(path, exist_ok=True)
     plt.savefig(os.path.join(path, f"{name}_samples.pdf"), bbox_inches='tight')
     plt.close()
+    #print(f"✅ Synthetic samples plot saved to {os.path.join(path, f"{name}_samples.pdf")}")
+
+def get_mean_spectra(spectra, labels, path, name):
+
+    assert len(spectra) == len(labels), "Number of spectra and labels must match."
+    plt.figure(figsize=(10, 6))
+
+    for i, spectra_set in enumerate(spectra):
+        mean_spectrum = np.mean(spectra_set, axis=0)
+
+        alpha = 0.6 if i == 1 else 1.0
+        plt.plot(mean_spectrum, label=name, color=f"C{i}", alpha=alpha)
+        plt.title(f"Mean Spectrum for {labels[i]}")
+        plt.xlabel("m/z")
+        plt.ylabel("Intensity")
+        plt.legend()
+
+    plt.tight_layout()
+    os.makedirs(path, exist_ok=True)
+    plt.savefig(os.path.join(path, f"{name}_mean_spectra.pdf"), bbox_inches='tight')
+    plt.close()
+    print(f"✅ Mean spectra plot saved to {os.path.join(path, f"{name}_mean_spectra.pdf")}")
