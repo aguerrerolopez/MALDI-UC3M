@@ -2,8 +2,8 @@ import os
 import sys
 import time
 import numpy as np
-import joblib
 import matplotlib.pyplot as plt
+import joblib
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.utils import shuffle
@@ -12,7 +12,7 @@ from sklearn.metrics import confusion_matrix, classification_report, ConfusionMa
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from dataloader.MaldiMaranon_Manager import MaldiMaranonManager
 from dataloader.MaldiDataset import MaldiDataset
-from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer, StdThresholder
+from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, BaselineCorrecter, Trimmer, Binner, Normalizer, StdThresholder, MinMaxScaler
 
 def main():
 
@@ -25,7 +25,7 @@ def main():
     result_dir = f'results/{data_name}_{name}_{time.strftime("%Y%m%d_%H%M%S")}/'
     os.makedirs(result_dir, exist_ok=True)
 
-    # MALDIMARANON dataset
+   # MALDIMARANON dataset
     # Load full training dataset
     dataset_path = f"/export/data_ml4ds/bacteria_id/MaldiMaranonDB"
 
@@ -43,7 +43,8 @@ def main():
                                         BaselineCorrecter(method="SNIP", snip_n_iter=20),
                                         Trimmer(),
                                         Binner(step=binning_step),
-                                        Normalizer(sum=1))
+                                        MinMaxScaler())
+                                        # Normalizer(sum=1))
     
     processing_stdthr = SequentialPreprocessor(VarStabilizer(method="sqrt"),
                                         Smoother(halfwindow=10),
@@ -51,7 +52,8 @@ def main():
                                         StdThresholder(factor=1.0),
                                         Trimmer(),
                                         Binner(step=binning_step),
-                                        Normalizer(sum=1))
+                                        MinMaxScaler())
+                                        # Normalizer(sum=1))
     
 
     # ---------------- DATASET CREATION -------------------
