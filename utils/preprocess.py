@@ -99,6 +99,7 @@ class Binner:
         self.bins = np.arange(start, stop + 1e-8, step)
         self.mz_bins = self.bins[:-1] + step / 2
         self.agg = aggregation
+        self.step = step
 
     def __call__(self, SpectrumObj):
         if self.agg == "sum":
