@@ -51,6 +51,5 @@ class VAE(nn.Module):
         # Encode input, reparameterize, then decode.
         mu, logvar, bot = self.encode(x)
         z = self.reparameterize(mu, logvar)
-        #TODO: if tsne is True, we need to add the tsne implementation here.
         recon = self.decode(z)
         return recon, mu, logvar, bot, z
