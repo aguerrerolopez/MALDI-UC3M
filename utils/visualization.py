@@ -234,53 +234,35 @@ def visualize_preprocessing_steps(spectrum, pipeline):
 
 #### MLP_VAE ####
 
-def plot_tsne(bot, z, labels=None, perplexity=30, random_state=42, path='.', name='vae', epoch=0):
-    """
-    Plots and saves t-SNE of both the MLP bottleneck and VAE latent space.
+def plot_tsne(z, data, n=5, path='.', name='vae', perplexity=30, random_state=42):
 
-    Parameters:
-    - bot (torch.Tensor): Output of encoder_bot [N, D].
-    - z (torch.Tensor): Latent vectors after reparameterization [N, d].
-    - labels (list of str): Labels for color grouping (optional).
-    - perplexity (int): t-SNE perplexity parameter.
-    - random_state (int): t-SNE random state.
-    - path (str): Folder to save the plot.
-    - name (str): Prefix name for the saved file.
-    - epoch (int): Epoch number for file naming.
-    """
-    assert bot.shape[0] == z.shape[0], "bot and z must have the same number of samples"
+    effective_perplexity = min(perplexity, max(5, len(z) - 1))
 
-    bot_np = bot.cpu().numpy()
-    z_np = z.cpu().numpy()
+    tsne_z = TSNE(n_components=2, perplexity=effective_perplexity, random_state=random_state)
+    z_2d = tsne_z.fit_transform(z)
 
-    tsne_bot = TSNE(n_components=2, perplexity=perplexity, random_state=random_state)
-    tsne_z = TSNE(n_components=2, perplexity=perplexity, random_state=random_state)
-
-    bot_2d = tsne_bot.fit_transform(bot_np)
-    z_2d = tsne_z.fit_transform(z_np)
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    if labels is not None:
-        labels = np.array(labels)
-        for ax, data, title in zip(axes, [bot_2d, z_2d], ["MLP Bottleneck", "VAE Latent z"]):
-            for label in np.unique(labels):
-                idx = labels == label
-                ax.scatter(data[idx, 0], data[idx, 1], label=str(label), s=10)
-            ax.set_title(f"t-SNE of {title}")
-            ax.legend(fontsize=6)
+    if isinstance(n, int):
+        np.random.seed(random_state)
+        highlight_indices = np.random.choice(len(data), size=n, replace=False)
     else:
-        axes[0].scatter(bot_2d[:, 0], bot_2d[:, 1], s=10)
-        axes[0].set_title("t-SNE of MLP Bottleneck")
-        axes[1].scatter(z_2d[:, 0], z_2d[:, 1], s=10)
-        axes[1].set_title("t-SNE of VAE Latent z")
+        highlight_indices = np.array(n)
 
-    for ax in axes:
-        ax.set_xlabel("t-SNE-1")
-        ax.set_ylabel("t-SNE-2")
+    plt.figure(figsize=(8, 6))
+    plt.scatter(z_2d[:, 0], z_2d[:, 1], s=10, alpha=0.4, label="All samples")
+    plt.scatter(z_2d[highlight_indices, 0], z_2d[highlight_indices, 1], color='red', s=20, label="Highlighted samples")
 
+    for i in highlight_indices:
+        plt.annotate(str(i), (z_2d[i, 0], z_2d[i, 1]), fontsize=6, alpha=0.7)
+
+    plt.xlabel("t-SNE-1")
+    plt.ylabel("t-SNE-2")
+    plt.title("t-SNE of VAE Latent z")
+    plt.legend() 
+    plt.grid(True, linestyle="--", alpha=0.6)
     plt.tight_layout()
-    filename = os.path.join(path, f"{name}_tsne_epoch_{epoch}.png")
+
+    os.makedirs(path, exist_ok=True)
+    filename = os.path.join(path, f"{name}_tsne.png")
     plt.savefig(filename)
     plt.close()
     print(f"✅ t-SNE plot saved to {filename}")
@@ -300,7 +282,10 @@ def visualize_preprocessing(sample, pipeline, path, histogram=True):
     # Apply preprocessing steps and collect results
     for step in pipeline.preprocessors:
         spectrum = step(spectrum)
-        steps.append((step.__class__.__name__, spectrum)) 
+        processing_step = step.__class__.__name__
+        if processing_step == "Binner":
+            processing_step = f'{processing_step} (bin_size={step.step})'
+        steps.append((processing_step, spectrum)) 
 
     n_steps = len(steps)
     ncols = 2 if histogram else 1
@@ -367,7 +352,7 @@ def plot_samples(samples, path, name="reconstruction"):
     os.makedirs(path, exist_ok=True)
     plt.savefig(os.path.join(path, f"{name}_samples.pdf"), bbox_inches='tight')
     plt.close()
-    #print(f"✅ Synthetic samples plot saved to {os.path.join(path, f"{name}_samples.pdf")}")
+    print(f"✅ Synthetic samples plot saved to {os.path.join(path, name + '_samples.pdf')}")
 
 def get_mean_spectra(spectra, labels, path, name):
 
@@ -388,4 +373,4 @@ def get_mean_spectra(spectra, labels, path, name):
     os.makedirs(path, exist_ok=True)
     plt.savefig(os.path.join(path, f"{name}_mean_spectra.pdf"), bbox_inches='tight')
     plt.close()
-    print(f"✅ Mean spectra plot saved to {os.path.join(path, f"{name}_mean_spectra.pdf")}")
+    print(f"✅ Mean spectra plot saved to {os.path.join(path, name + '_mean_spectra.pdf')}")
