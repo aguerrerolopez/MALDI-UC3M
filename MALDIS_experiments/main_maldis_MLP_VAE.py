@@ -147,7 +147,6 @@ if __name__ == "__main__":
     test_dataset  = MaldiDataset(test_data, preprocess_pipeline=preprocess_pipeline)
     test_loader  = DataLoader(test_dataset,  batch_size=64, shuffle=False, collate_fn=collate_spectra)
 
-    print(f"Length of the test dataset: {len(test_dataset)}")
     
     # ------------------------------
     # 2) DEFINE MODELS

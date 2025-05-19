@@ -10,7 +10,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.losses import loss_function
-from utils.visualization import plot_tsne, plot_samples, get_mean_spectra
+from utils.visualization import plot_tsne, plot_samples, get_mean_spectra, plot_pca_2d, plot_pca_3d
 from dataloader.SpectrumObject import SpectrumObject
 
 
@@ -210,6 +210,8 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5,
     # Plotting
     plot_samples(samples, result_dir, name)
     plot_tsne(all_z, original, global_indices, result_dir, name)
+    plot_pca_2d(all_z, original, global_indices, result_dir, name)
+    plot_pca_3d(all_z, original, global_indices, result_dir, name)
     get_mean_spectra([original, reconstructed], ['Original', 'Reconstructed'], result_dir, name)
 
 

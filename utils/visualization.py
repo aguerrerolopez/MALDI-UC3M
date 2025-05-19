@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from sklearn.decomposition import PCA
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from scipy import interpolate
 
@@ -267,6 +269,68 @@ def plot_tsne(z, data, n=5, path='.', name='vae', perplexity=30, random_state=42
     plt.close()
     print(f"✅ t-SNE plot saved to {filename}")
 
+def plot_pca_2d(z, data, n=5, path='.', name='vae'):
+    if isinstance(n, int):
+        np.random.seed(42)
+        highlight_indices = np.random.choice(len(data), size=n, replace=False)
+    else:
+        highlight_indices = np.array(n)
+
+    pca = PCA(n_components=2)
+    z_2d = pca.fit_transform(z)
+
+    plt.figure(figsize=(8, 6))
+    plt.scatter(z_2d[:, 0], z_2d[:, 1], s=10, alpha=0.4, label="All samples")
+    plt.scatter(z_2d[highlight_indices, 0], z_2d[highlight_indices, 1], color='red', s=20, label="Highlighted samples")
+
+    for i in highlight_indices:
+        plt.annotate(str(i), (z_2d[i, 0], z_2d[i, 1]), fontsize=6, alpha=0.8)
+
+    plt.xlabel("PCA-1")
+    plt.ylabel("PCA-2")
+    plt.title("2D PCA of VAE Latent z")
+    plt.legend()
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.tight_layout()
+
+    os.makedirs(path, exist_ok=True)
+    filename = os.path.join(path, f"{name}_pca2d.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"✅ 2D PCA plot saved to {filename}")
+
+def plot_pca_3d(z, data, n=5, path='.', name='vae'):
+    if isinstance(n, int):
+        np.random.seed(42)
+        highlight_indices = np.random.choice(len(data), size=n, replace=False)
+    else:
+        highlight_indices = np.array(n)
+
+    pca = PCA(n_components=3)
+    z_3d = pca.fit_transform(z)
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.scatter(z_3d[:, 0], z_3d[:, 1], z_3d[:, 2], s=10, alpha=0.4, label="All samples")
+    ax.scatter(z_3d[highlight_indices, 0], z_3d[highlight_indices, 1], z_3d[highlight_indices, 2], color='red', s=20, label="Highlighted samples")
+
+    for i in highlight_indices:
+        ax.text(z_3d[i, 0], z_3d[i, 1], z_3d[i, 2], str(i), size=6, zorder=1)
+
+    ax.set_xlabel("PCA-1")
+    ax.set_ylabel("PCA-2")
+    ax.set_zlabel("PCA-3")
+    plt.title("3D PCA of VAE Latent z")
+    plt.legend()
+    plt.tight_layout()
+
+    os.makedirs(path, exist_ok=True)
+    filename = os.path.join(path, f"{name}_pca3d.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"✅ 3D PCA plot saved to {filename}")
+
 def visualize_preprocessing(sample, pipeline, path, histogram=True):
     """
     Visualizes a spectrum at each step of the preprocessing pipeline with optional histograms.
@@ -355,7 +419,6 @@ def plot_samples(samples, path, name="reconstruction"):
     print(f"✅ Synthetic samples plot saved to {os.path.join(path, name + '_samples.pdf')}")
 
 def get_mean_spectra(spectra, labels, path, name):
-
     assert len(spectra) == len(labels), "Number of spectra and labels must match."
     plt.figure(figsize=(10, 6))
 
@@ -363,8 +426,8 @@ def get_mean_spectra(spectra, labels, path, name):
         mean_spectrum = np.mean(spectra_set, axis=0)
 
         alpha = 0.6 if i == 1 else 1.0
-        plt.plot(mean_spectrum, label=name, color=f"C{i}", alpha=alpha)
-        plt.title(f"Mean Spectrum for {labels[i]}")
+        plt.plot(mean_spectrum, label=labels[i], color=f"C{i}", alpha=alpha)
+        plt.title(f"Mean Spectrum")
         plt.xlabel("m/z")
         plt.ylabel("Intensity")
         plt.legend()
