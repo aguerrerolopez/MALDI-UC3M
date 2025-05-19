@@ -12,6 +12,7 @@ from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, Ba
 from models.bottlenecks import MLP
 from models.AE_VAE import VAE
 from utils.misc import plot_train_val_curves, early_stopping, train, evaluate, collate_spectra, predict, test_synth_data
+from utils.visualization import plot_tsne
 
 def main():
 
@@ -124,7 +125,7 @@ def inference(model, test_loader, device, path, name):
 
 if __name__ == "__main__":
 
-    training = True
+    training = False
 
     # MALDIMARANON dataset
     dataset_path = f"/export/data_ml4ds/bacteria_id/MaldiMaranonDB"
@@ -160,7 +161,6 @@ if __name__ == "__main__":
     decoder_bot = bottleneck.decoder
     model = VAE(encoder_bot, decoder_bot, loss_mode=loss_mode).to(device)
 
-
     saved_model = main() if training else '/export/usuarios_ml4ds/lschmidt/GITHUB/MALDI-UC3M/results/MALDIS_mlp_vae_20250514_172756/mlp_vae_bestmodel.pth'
     model.load_state_dict(torch.load(saved_model))
 
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     print(f"Length of the synthesized dataset: {len(synth_dataset)}")
     
     # Test the synthesized dataset
-    # rf_model_path = '/export/usuarios_ml4ds/lschmidt/GITHUB/MALDI-UC3M/results/MALDIS_rf_20250514_131530/rf_stdthr_model.pkl'
-    # test_synth_data(synth_dataset, rf_model_path)
+    rf_model_path = '/export/usuarios_ml4ds/lschmidt/GITHUB/MALDI-UC3M/results/MALDIS_rf_20250515_133615/rf_stdthr_model.pkl'
+    test_synth_data(synth_dataset, rf_model_path)
 
 
