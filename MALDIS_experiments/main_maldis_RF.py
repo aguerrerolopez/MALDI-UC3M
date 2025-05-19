@@ -37,7 +37,7 @@ def main():
     
 
     # ---------------- PREPROCESSING COMPARISON -------------------
-    binning_step = 9
+    binning_step = 3
     processing_basic = SequentialPreprocessor(VarStabilizer(method="sqrt"),
                                         Smoother(halfwindow=10),
                                         BaselineCorrecter(method="SNIP", snip_n_iter=20),
