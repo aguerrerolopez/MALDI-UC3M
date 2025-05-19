@@ -157,7 +157,10 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5,
     samples = []
     original= []
     reconstructed = []
+    global_indices = []
     synth_data = [] if save_synth else None
+
+    all_z = []
 
     total_loss = 0.0
     total_RE = 0.0
@@ -170,6 +173,7 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5,
             intensities = intensities.to(device)
 
             recon_batch, mu, logvar, bot, z = model(intensities)
+            all_z.append(z.cpu().numpy())
             loss, rec, kl = loss_function(recon_batch, intensities, mu, logvar, model.loss_mode)
 
             for i in range(intensities.size(0)):
@@ -189,6 +193,7 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5,
                 # Plot only the selected samples
                 if global_idx in selected_indices and plotted < num_samples_to_plot:
                     samples.append((int, recon, global_idx))
+                    global_indices.append(global_idx)
                     plotted += 1
 
                 original.append(int)
@@ -197,14 +202,15 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5,
             total_loss += loss.item()
             total_RE += rec.item()
             total_KL += kl.item()
+
+        all_z = np.concatenate(all_z, axis=0)
+
         print(f"====>TEST: Average loss: {total_loss / len(test_loader.dataset):.4f}  RECON: {total_RE / len(test_loader.dataset):.4f}  KL: {total_KL / len(test_loader.dataset):.4f}")
     
     # Plotting
     plot_samples(samples, result_dir, name)
-
-    labels = ['Original', 'Reconstructed']
-    spectra = [original, reconstructed]
-    get_mean_spectra(spectra, labels, result_dir, name)
+    plot_tsne(all_z, original, global_indices, result_dir, name)
+    get_mean_spectra([original, reconstructed], ['Original', 'Reconstructed'], result_dir, name)
 
 
     return synth_data if save_synth else None
