@@ -4,9 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from sklearn.decomposition import PCA
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
-from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+from umap import UMAP
 from scipy import interpolate
 
 
@@ -437,3 +436,47 @@ def get_mean_spectra(spectra, labels, path, name):
     plt.savefig(os.path.join(path, f"{name}_mean_spectra.pdf"), bbox_inches='tight')
     plt.close()
     print(f"✅ Mean spectra plot saved to {os.path.join(path, name + '_mean_spectra.pdf')}")
+
+def plot_umap(z, data, n=5, path='.', name='vae', n_neighbors=15, min_dist=0.1, random_state=42):
+    """
+    Plots a UMAP projection of latent space `z`.
+
+    Parameters:
+    - z (np.array): Latent space array.
+    - data (list): List used to determine highlight samples.
+    - n (int or list): If int, number of random samples to highlight. If list, specific indices to highlight.
+    - path (str): Directory to save the figure.
+    - name (str): Base name for the file.
+    - n_neighbors (int): UMAP's number of neighbors.
+    - min_dist (float): UMAP's minimum distance.
+    - random_state (int): Seed for reproducibility.
+    """
+
+    umap_model = UMAP(n_components=2, n_neighbors=n_neighbors, min_dist=min_dist, random_state=random_state)
+    z_umap = umap_model.fit_transform(z)
+
+    if isinstance(n, int):
+        np.random.seed(random_state)
+        highlight_indices = np.random.choice(len(data), size=n, replace=False)
+    else:
+        highlight_indices = np.array(n)
+
+    plt.figure(figsize=(8, 6))
+    plt.scatter(z_umap[:, 0], z_umap[:, 1], s=10, alpha=0.4, label="All samples")
+    plt.scatter(z_umap[highlight_indices, 0], z_umap[highlight_indices, 1], color='red', s=20, label="Highlighted samples")
+
+    for i in highlight_indices:
+        plt.annotate(str(i), (z_umap[i, 0], z_umap[i, 1]), fontsize=6, alpha=0.8)
+
+    plt.xlabel("UMAP-1")
+    plt.ylabel("UMAP-2")
+    plt.title("UMAP of VAE Latent z")
+    plt.legend()
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.tight_layout()
+
+    os.makedirs(path, exist_ok=True)
+    filename = os.path.join(path, f"{name}_umap.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"✅ UMAP plot saved to {filename}")
