@@ -12,7 +12,10 @@ from utils.preprocess import SequentialPreprocessor, VarStabilizer, Smoother, Ba
 from models.bottlenecks import MLP
 from models.AE_VAE import VAE
 from utils.misc import plot_train_val_curves, early_stopping, train, evaluate, collate_spectra, predict, test_synth_data
-from utils.visualization import plot_tsne
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 def main():
 
@@ -147,7 +150,7 @@ if __name__ == "__main__":
     test_dataset  = MaldiDataset(test_data, preprocess_pipeline=preprocess_pipeline)
     test_loader  = DataLoader(test_dataset,  batch_size=64, shuffle=False, collate_fn=collate_spectra)
 
-    
+
     # ------------------------------
     # 2) DEFINE MODELS
     # ------------------------------
