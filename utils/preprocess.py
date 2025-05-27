@@ -75,6 +75,25 @@ class StdThresholder:
         threshold = self.factor * np.std(SpectrumObj.intensity)
         new_intensity = np.where(SpectrumObj.intensity >= threshold, SpectrumObj.intensity, 0.0)
         return SpectrumObject(intensity=new_intensity, mz=SpectrumObj.mz)
+    
+class LogScaler:
+    """Pre-processing function for scaling the intensity of a spectrum using logarithm.
+
+    Parameters
+    ----------
+    base : int, optional
+        base of the logarithm, by default 10
+    """
+
+    def __init__(self, base=10):
+        self.base = base
+
+    def __call__(self, SpectrumObj):
+        s = SpectrumObject(
+            intensity=np.log(SpectrumObj.intensity + 1) / np.log(self.base),
+            mz=SpectrumObj.mz,
+        )
+        return s
 
 
 class Binner:
