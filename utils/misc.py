@@ -103,7 +103,7 @@ def train(model, device, train_loader, optimizer, epoch):
         KL_vals += kl.item()
         
         if batch_idx % 100 == 0:
-            print(f"Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}] Loss: {loss.item() / len(data):.4f}  RECON: {rec.item() / len(data):.4f}  KL: {kl.item() / len(data):.4f}")
+            print(f"Epoch {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}] Loss: {loss.item() / len(data):.4f}  RECON: {rec.item() / len(data):.4f}  KL: {kl.item() / len(data):.4f}", flush=True)
     print(f"====> Epoch {epoch} Average loss: {train_loss / len(train_loader.dataset):.4f}  RECON: {RE_vals / len(train_loader.dataset):.4f}  KL: {KL_vals / len(train_loader.dataset):.4f}")
 
     return train_loss / len(train_loader.dataset), RE_vals / len(train_loader.dataset), KL_vals / len(train_loader.dataset)
@@ -146,12 +146,13 @@ def evaluate(test_loader, name=None, model=None, epoch=None, device="cpu"):
 
     return avg_nll, avg_RE, avg_KL
 
-def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5, save_synth=False):
+def predict(model, test_loader, lastpreprocessing, device, result_dir, name, num_samples_to_plot=5, save_synth=False):
     model.to(device)
     model.eval()
 
     os.makedirs(result_dir, exist_ok=True)
     plotted = 0
+    selected_info = {}
     selected_indices = random.sample(range(len(test_loader.dataset)), min(num_samples_to_plot, len(test_loader.dataset)))
 
     samples = []
@@ -179,6 +180,12 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5,
             for i in range(intensities.size(0)):
                 int = intensities[i].cpu().numpy()
                 recon = recon_batch[i].cpu().numpy()
+
+                if lastpreprocessing == 'log10':
+                    # Inverse log10 scaling
+                    int = 10 ** int - 1
+                    recon = 10 ** recon - 1
+
                 mz = mzs[i].cpu().numpy()
                 label = labels[i] + '_synth'
                 meta = metas[i]
@@ -194,6 +201,7 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5,
                 if global_idx in selected_indices and plotted < num_samples_to_plot:
                     samples.append((int, recon, global_idx))
                     global_indices.append(global_idx)
+                    selected_info[global_idx] = meta['study']
                     plotted += 1
 
                 original.append(int)
@@ -208,13 +216,12 @@ def predict(model, test_loader, device, result_dir, name, num_samples_to_plot=5,
         print(f"====>TEST: Average loss: {total_loss / len(test_loader.dataset):.4f}  RECON: {total_RE / len(test_loader.dataset):.4f}  KL: {total_KL / len(test_loader.dataset):.4f}")
     
     # Plotting
-    plot_samples(samples, result_dir, name)
+    plot_samples(samples, result_dir, name, labels=selected_info)
     plot_tsne(all_z, original, global_indices, result_dir, name)
     plot_pca_2d(all_z, original, global_indices, result_dir, name)
     plot_pca_3d(all_z, original, global_indices, result_dir, name)
     plot_umap(all_z, original, global_indices, result_dir, name)
     get_mean_spectra([original, reconstructed], ['Original', 'Reconstructed'], result_dir, name)
-
 
     return synth_data if save_synth else None
 
