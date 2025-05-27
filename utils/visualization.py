@@ -348,6 +348,8 @@ def visualize_preprocessing(sample, pipeline, path, histogram=True):
         processing_step = step.__class__.__name__
         if processing_step == "Binner":
             processing_step = f'{processing_step} (bin_size={step.step})'
+        elif processing_step == "LogScaler":
+            processing_step = f'{processing_step} (base={step.base})'
         steps.append((processing_step, spectrum)) 
 
     n_steps = len(steps)
@@ -386,7 +388,7 @@ def visualize_preprocessing(sample, pipeline, path, histogram=True):
     plt.close()
     print(f"✅ Preprocessing plot saved to {filename}")
 
-def plot_samples(samples, path, name="reconstruction"):
+def plot_samples(samples, path, name="reconstruction", labels=None):
     """
     Plots and saves comparisons between original and reconstructed spectra for multiple samples.
 
@@ -405,7 +407,8 @@ def plot_samples(samples, path, name="reconstruction"):
     for ax, (original, reconstructed, sample_idx) in zip(axes, samples):
         ax.plot(original, label="Original")
         ax.plot(reconstructed, label="Reconstructed", alpha=0.6)
-        ax.set_title(f"Sample {sample_idx}")
+        label_str = f" - {labels[sample_idx]}" if labels and sample_idx in labels else ""
+        ax.set_title(f"Sample {sample_idx}: {label_str}")
         ax.set_xlabel("m/z")
         ax.set_ylabel("Intensity")
         ax.legend()
